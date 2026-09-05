@@ -2,12 +2,17 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { formatDate, formatTime } from '../utils/dateUtils';
+import { CenteredSpinner } from '../components/ui/Loading';
 import { 
   FileSpreadsheet, Users, FileText, Clock, WalletCards, 
   Receipt, Download, Search, RefreshCw, Filter, Eye, ChevronRight 
 } from 'lucide-react';
 
+import { useAuth } from '../context/AuthContext';
+
 export default function ReportsPage() {
+  const { user } = useAuth();
+  const isHrManager = user?.role === 'hr_manager';
   const [activeReport, setActiveReport] = useState('employees');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -15,7 +20,7 @@ export default function ReportsPage() {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const toast = useToast();
 
-  const reportTabs = [
+  const allReportTabs = [
     { id: 'employees', label: 'Employees Report', icon: Users, endpoint: '/reports/employees' },
     { id: 'contracts', label: 'Contracts Report', icon: FileText, endpoint: '/reports/contracts' },
     { id: 'attendance', label: 'Attendance Report', icon: Clock, endpoint: '/reports/attendance' },
@@ -24,9 +29,11 @@ export default function ReportsPage() {
     { id: 'payslips', label: 'Payslip History Report', icon: FileSpreadsheet, endpoint: '/reports/payslips' }
   ];
 
+  const reportTabs = allReportTabs.filter(t => !isHrManager || !['payroll', 'payslips'].includes(t.id));
+
   const fetchReportData = async () => {
     setLoading(true);
-    const currentTab = reportTabs.find(t => t.id === activeReport);
+    const currentTab = reportTabs.find(t => t.id === activeReport) || reportTabs[0];
     if (!currentTab) return;
 
     try {
@@ -162,10 +169,7 @@ export default function ReportsPage() {
       {/* Report Table */}
       <div className="card" style={{ padding: '0', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px auto' }} />
-            Loading report data...
-          </div>
+          <CenteredSpinner />
         ) : filteredData.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
             No records found for the selected report criteria.
@@ -182,7 +186,6 @@ export default function ReportsPage() {
                       <th>Email</th>
                       <th>Department</th>
                       <th>Position</th>
-                      <th>Manager</th>
                       <th>Joining Date</th>
                       <th>Status</th>
                       <th>Action</th>
@@ -256,7 +259,7 @@ export default function ReportsPage() {
               </thead>
               <tbody>
                 {filteredData.map((row, idx) => (
-                  <tr key={row.id || idx}>
+                  <tr key={`rpt-row-${row.id || idx}-${idx}`}>
                     {activeReport === 'employees' && (
                       <>
                         <td style={{ fontWeight: '600' }}>{row.emp_id}</td>
@@ -264,7 +267,6 @@ export default function ReportsPage() {
                         <td>{row.email}</td>
                         <td>{row.department_name || '-'}</td>
                         <td>{row.job_position}</td>
-                        <td>{row.manager_name || '-'}</td>
                         <td>{formatDate(row.joining_date)}</td>
                         <td><span className={`badge badge-${row.status === 'Active' ? 'success' : 'neutral'}`}>{row.status}</span></td>
                         <td><button onClick={() => setSelectedRecord(row)} className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }}>View</button></td>

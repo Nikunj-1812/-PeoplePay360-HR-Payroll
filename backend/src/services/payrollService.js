@@ -2,20 +2,21 @@ const { sql } = require('../db');
 const { findApplicableContract } = require('./contractService');
 
 async function getEligibleEmployees(salaryStructureId, periodStart, periodEnd) {
-  // Find employees who have active contracts covering period
+  const cleanStructId = salaryStructureId && !isNaN(salaryStructureId) ? parseInt(salaryStructureId, 10) : null;
+  // Show active employees even when their period contract is missing so payroll can surface a warning.
   const employees = await sql`
-    SELECT DISTINCT
+    SELECT DISTINCT ON (e.id)
       e.id, e.emp_id, e.first_name, e.last_name, e.email, e.job_position, e.bank_name, e.account_number,
       d.name as department_name,
       c.id as contract_id, c.wage, c.contract_number
     FROM employees e
-    JOIN contracts c ON c.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    WHERE c.status = 'Active'
+    LEFT JOIN contracts c ON c.employee_id = e.id
       AND c.start_date <= ${periodEnd}
       AND (c.end_date IS NULL OR c.end_date >= ${periodStart})
-      AND (${salaryStructureId ? sql`c.salary_structure_id = ${salaryStructureId}` : sql`1=1`})
-    ORDER BY e.id ASC
+      AND (${cleanStructId}::int IS NULL OR c.salary_structure_id = ${cleanStructId})
+    LEFT JOIN departments d ON e.department_id = d.id
+    WHERE e.status = 'Active'
+    ORDER BY e.id ASC, c.start_date DESC
   `;
   return employees;
 }
@@ -78,13 +79,36 @@ async function createPayrun(data) {
     RETURNING *
   `;
 
-  // 2. Initialize draft payslips for selected employees
-  for (const empId of employee_ids) {
-    const contract = await findApplicableContract(empId, period_start, period_end);
-    await sql`
-      INSERT INTO payslips (payrun_id, employee_id, contract_id, period_start, period_end, status)
-      VALUES (${payrun.id}, ${empId}, ${contract ? contract.id : null}, ${period_start}, ${period_end}, 'Draft')
-    `;
+  // 2. Fetch all valid contracts for selected employees in a single batch query for that period
+  const cleanEmpIds = employee_ids.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
+  const contracts = await sql`
+    SELECT DISTINCT ON (employee_id) id, employee_id
+    FROM contracts
+    WHERE employee_id = ANY(${cleanEmpIds})
+      AND salary_structure_id = ${salary_structure_id}
+      AND start_date <= ${period_end}
+      AND (end_date IS NULL OR end_date >= ${period_start})
+    ORDER BY employee_id, start_date DESC
+  `;
+
+  const contractMap = new Map();
+  for (const c of contracts) {
+    if (!contractMap.has(c.employee_id)) {
+      contractMap.set(c.employee_id, c.id);
+    }
+  }
+
+  // 3. Batch insert draft payslips in chunks of 50
+  const chunkSize = 50;
+  for (let i = 0; i < cleanEmpIds.length; i += chunkSize) {
+    const chunk = cleanEmpIds.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(empId => {
+      const contractId = contractMap.get(empId) || null;
+      return sql`
+        INSERT INTO payslips (payrun_id, employee_id, contract_id, period_start, period_end, status)
+        VALUES (${payrun.id}, ${empId}, ${contractId}, ${period_start}, ${period_end}, 'Draft')
+      `;
+    }));
   }
 
   return payrun;
@@ -95,6 +119,7 @@ async function computePayrun(payrunId) {
   await sql`UPDATE payruns SET status = 'Computing' WHERE id = ${payrunId}`;
 
   const payruns = await sql`SELECT * FROM payruns WHERE id = ${payrunId}`;
+  if (payruns.length === 0) throw new Error('Payrun not found');
   const payrun = payruns[0];
 
   // Get ordered salary rules for structure
@@ -104,19 +129,33 @@ async function computePayrun(payrunId) {
     ORDER BY sequence ASC
   `;
 
-  const payslips = await sql`SELECT * FROM payslips WHERE payrun_id = ${payrunId}`;
-  
+  const payslips = await sql`
+    SELECT p.id, p.employee_id, COALESCE(c.wage, 0) as wage
+    FROM payslips p
+    LEFT JOIN LATERAL (
+      SELECT wage FROM contracts
+      WHERE employee_id = p.employee_id
+        AND start_date <= ${payrun.period_end}
+        AND (end_date IS NULL OR end_date >= ${payrun.period_start})
+      ORDER BY start_date DESC
+      LIMIT 1
+    ) c ON true
+    WHERE p.payrun_id = ${payrunId}
+  `;
+
+  // Clear existing lines in one batch query
+  await sql`
+    DELETE FROM payslip_lines 
+    WHERE payslip_id IN (SELECT id FROM payslips WHERE payrun_id = ${payrunId})
+  `;
+
   let batchGross = 0;
   let batchNet = 0;
+  const lineInserts = [];
+  const payslipUpdates = [];
 
   for (const slip of payslips) {
-    const contract = await findApplicableContract(slip.employee_id, payrun.period_start, payrun.period_end);
-    const wage = contract ? parseFloat(contract.wage) : 0;
-
-    // Delete existing lines
-    await sql`DELETE FROM payslip_lines WHERE payslip_id = ${slip.id}`;
-
-    // Calculation Engine
+    const wage = slip.wage ? parseFloat(slip.wage) : 0;
     const ruleValues = { WAGE: wage };
     let gross = 0;
     let deduction = 0;
@@ -131,7 +170,6 @@ async function computePayrun(payrunId) {
         const baseVal = ruleValues[baseKey] || (baseKey === 'WAGE' ? wage : 0);
         val = baseVal * (parseFloat(rule.percentage) / 100);
       } else if (rule.computation_type === 'formula') {
-        // Safe evaluation of simple standard formula expressions e.g. "BASIC + HRA + SPECIAL_ALLOW" or "GROSS - PF - PT"
         const expr = rule.formula_expression || '';
         if (expr.includes('BASIC + HRA + SPECIAL_ALLOW') || rule.category === 'gross') {
           val = (ruleValues['BASIC'] || 0) + (ruleValues['HRA'] || 0) + (ruleValues['SPECIAL_ALLOW'] || 0);
@@ -148,27 +186,50 @@ async function computePayrun(payrunId) {
       if (rule.category === 'gross') gross = val;
       if (rule.category === 'deduction') deduction += val;
 
-      // Save line item
-      await sql`
-        INSERT INTO payslip_lines (payslip_id, salary_rule_id, rule_code, rule_name, category, sequence, amount)
-        VALUES (${slip.id}, ${rule.id}, ${rule.code}, ${rule.name}, ${rule.category}, ${rule.sequence}, ${val})
-      `;
+      lineInserts.push({
+        payslip_id: slip.id,
+        salary_rule_id: rule.id,
+        rule_code: rule.code,
+        rule_name: rule.name,
+        category: rule.category,
+        sequence: rule.sequence,
+        amount: val
+      });
     }
 
     const net = Math.max(0, gross - deduction);
-
     batchGross += gross;
     batchNet += net;
 
-    // Update payslip record
-    await sql`
+    payslipUpdates.push({
+      id: slip.id,
+      gross,
+      deduction,
+      net
+    });
+  }
+
+  // Insert lines in parallel chunks of 50
+  const chunkSize = 50;
+  for (let i = 0; i < lineInserts.length; i += chunkSize) {
+    const chunk = lineInserts.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(item => sql`
+      INSERT INTO payslip_lines (payslip_id, salary_rule_id, rule_code, rule_name, category, sequence, amount)
+      VALUES (${item.payslip_id}, ${item.salary_rule_id}, ${item.rule_code}, ${item.rule_name}, ${item.category}, ${item.sequence}, ${item.amount})
+    `));
+  }
+
+  // Update payslips in parallel chunks of 50
+  for (let i = 0; i < payslipUpdates.length; i += chunkSize) {
+    const chunk = payslipUpdates.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(item => sql`
       UPDATE payslips SET
-        gross_amount = ${gross},
-        deduction_amount = ${deduction},
-        net_amount = ${net},
+        gross_amount = ${item.gross},
+        deduction_amount = ${item.deduction},
+        net_amount = ${item.net},
         status = 'Generated'
-      WHERE id = ${slip.id}
-    `;
+      WHERE id = ${item.id}
+    `));
   }
 
   // Update Payrun to Computed
@@ -193,6 +254,23 @@ async function validatePayrun(payrunId) {
     WHERE p.payrun_id = ${payrunId}
   `;
 
+  if (payslips.length === 0) return warnings;
+
+  const periodStart = payslips[0].period_start;
+  const periodEnd = payslips[0].period_end;
+
+  const attendanceExceptions = await sql`
+    SELECT employee_id, count(*)::int as count
+    FROM attendance
+    WHERE date >= ${periodStart} AND date <= ${periodEnd}
+      AND status = 'Missing Checkout'
+    GROUP BY employee_id
+  `;
+  const exceptionMap = new Map();
+  for (const a of attendanceExceptions) {
+    exceptionMap.set(a.employee_id, a.count);
+  }
+
   for (const p of payslips) {
     if (!p.bank_name || !p.account_number) {
       warnings.push({
@@ -210,18 +288,12 @@ async function validatePayrun(payrunId) {
       });
     }
 
-    // Check missing checkout in period
-    const missingCheckouts = await sql`
-      SELECT count(*)::int as count FROM attendance
-      WHERE employee_id = ${p.employee_id}
-        AND date >= ${p.period_start} AND date <= ${p.period_end}
-        AND status = 'Missing Checkout'
-    `;
-    if (missingCheckouts[0].count > 0) {
+    const excCount = exceptionMap.get(p.employee_id) || 0;
+    if (excCount > 0) {
       warnings.push({
         type: 'ATTENDANCE_EXCEPTION',
         employee_id: p.employee_id,
-        message: `${p.first_name} ${p.last_name} (${p.emp_id}) has ${missingCheckouts[0].count} missing attendance check-out(s).`
+        message: `${p.first_name} ${p.last_name} (${p.emp_id}) has ${excCount} missing attendance check-out(s).`
       });
     }
   }
@@ -229,14 +301,74 @@ async function validatePayrun(payrunId) {
   return warnings;
 }
 
+const notificationService = require('./notificationService');
+
 async function updatePayrunStatus(payrunId, status) {
+  const payruns = await sql`SELECT * FROM payruns WHERE id = ${payrunId}`;
+  if (payruns.length === 0) throw new Error('Payrun not found');
+  const currentPayrun = payruns[0];
+
+  if (status === 'Validated') {
+    if (currentPayrun.status === 'Draft') {
+      const err = new Error('Cannot validate a Draft payrun. Please compute payroll first.');
+      err.status = 400;
+      throw err;
+    }
+    const warnings = await validatePayrun(payrunId);
+    const criticalErrors = warnings.filter(w => w.type === 'MISSING_CONTRACT');
+    if (criticalErrors.length > 0) {
+      const err = new Error(`Validation failed: ${criticalErrors[0].message}`);
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  if (status === 'Paid') {
+    if (currentPayrun.status === 'Draft') {
+      const err = new Error('Cannot mark a Draft payrun as Paid. Please compute and validate payroll first.');
+      err.status = 400;
+      throw err;
+    }
+  }
+
   const [updated] = await sql`
     UPDATE payruns SET status = ${status} WHERE id = ${payrunId} RETURNING *
   `;
   if (status === 'Paid') {
     await sql`UPDATE payslips SET status = 'Generated' WHERE payrun_id = ${payrunId}`;
+
+    try {
+      const slips = await sql`SELECT employee_id, net_amount FROM payslips WHERE payrun_id = ${payrunId}`;
+      const chunkSize = 50;
+      for (let i = 0; i < slips.length; i += chunkSize) {
+        const chunk = slips.slice(i, i + chunkSize);
+        await Promise.all(chunk.map(slip => notificationService.notifyEmployeeUser(slip.employee_id, {
+          title: 'Payslip Dispatched & Paid',
+          message: `Your net salary of ₹${parseFloat(slip.net_amount || 0).toLocaleString('en-IN')} for payrun "${updated.name}" is processed!`,
+          type: 'payroll',
+          link_tab: 'payroll'
+        })));
+      }
+
+      await notificationService.notifyRoles(['admin', 'hr_manager', 'hr_payroll_manager'], {
+        title: 'Payrun Finalized & Paid',
+        message: `Payrun "${updated.name}" was finalized. Total Net Paid: ₹${parseFloat(updated.total_net || 0).toLocaleString('en-IN')}.`,
+        type: 'payroll',
+        link_tab: 'payroll'
+      });
+    } catch (err) {
+      console.error('Payroll notification error:', err);
+    }
   }
   return updated;
 }
 
-module.exports = { getEligibleEmployees, getPayruns, getPayrunById, createPayrun, computePayrun, validatePayrun, updatePayrunStatus };
+async function deletePayrun(id) {
+  const cleanId = parseInt(id, 10);
+  await sql`DELETE FROM payslip_lines WHERE payslip_id IN (SELECT id FROM payslips WHERE payrun_id = ${cleanId})`;
+  await sql`DELETE FROM payslips WHERE payrun_id = ${cleanId}`;
+  const [deleted] = await sql`DELETE FROM payruns WHERE id = ${cleanId} RETURNING *`;
+  return deleted;
+}
+
+module.exports = { getEligibleEmployees, getPayruns, getPayrunById, createPayrun, computePayrun, validatePayrun, updatePayrunStatus, deletePayrun };

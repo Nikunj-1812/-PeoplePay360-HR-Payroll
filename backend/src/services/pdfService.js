@@ -96,14 +96,14 @@ async function generatePayslipPDF(payslipId) {
 
       doc.fillColor('#0A1931').fontSize(10).font('Helvetica-Bold');
       doc.text('Gross Earnings:', 310, y + 12);
-      doc.text(`₹ ${parseFloat(slip.gross_amount).toLocaleString('en-IN')}`, 450, y + 12, { align: 'right' });
+      doc.text(`₹ ${parseFloat(slip.gross_amount || 0).toLocaleString('en-IN')}`, 450, y + 12, { align: 'right' });
 
       doc.text('Total Deductions:', 310, y + 32);
-      doc.text(`- ₹ ${parseFloat(slip.deduction_amount).toLocaleString('en-IN')}`, 450, y + 32, { align: 'right' });
+      doc.text(`- ₹ ${parseFloat(slip.deduction_amount || 0).toLocaleString('en-IN')}`, 450, y + 32, { align: 'right' });
 
       doc.fillColor('#1A3D63').fontSize(12).font('Helvetica-Bold');
       doc.text('NET PAYABLE:', 310, y + 60);
-      doc.text(`₹ ${parseFloat(slip.net_amount).toLocaleString('en-IN')}`, 450, y + 60, { align: 'right' });
+      doc.text(`₹ ${parseFloat(slip.net_amount || 0).toLocaleString('en-IN')}`, 450, y + 60, { align: 'right' });
 
       // Footer
       doc.fontSize(8).fillColor('#6B6375').font('Helvetica');

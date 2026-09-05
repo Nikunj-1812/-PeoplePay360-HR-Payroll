@@ -18,54 +18,86 @@ async function getAttendance(filters = {}) {
 }
 
 async function clockIn(employeeId) {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const nowISO = new Date().toISOString();
+  const cleanId = parseInt(employeeId, 10);
+  if (!cleanId || isNaN(cleanId)) throw new Error('Valid employee ID required for Check In');
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+  const nowISO = now.toISOString();
 
   const existing = await sql`
-    SELECT * FROM attendance WHERE employee_id = ${employeeId} AND date = ${todayStr}
+    SELECT * FROM attendance 
+    WHERE employee_id = ${cleanId} 
+      AND (date = ${todayStr}::date OR (check_in IS NOT NULL AND check_in::date = ${todayStr}::date))
+    ORDER BY id DESC
   `;
 
   if (existing.length > 0) {
-    throw new Error('Already checked in for today.');
+    const rec = existing[0];
+    if (rec.check_in && !rec.check_out) {
+      const err = new Error('You are already checked in for today.');
+      err.status = 400;
+      throw err;
+    }
+    if (rec.check_in && rec.check_out) {
+      const err = new Error('You have already completed attendance for today.');
+      err.status = 400;
+      throw err;
+    }
   }
 
   const [rec] = await sql`
     INSERT INTO attendance (employee_id, date, check_in, status)
-    VALUES (${employeeId}, ${todayStr}, ${nowISO}, 'Present')
+    VALUES (${cleanId}, ${todayStr}, ${nowISO}, 'Present')
     RETURNING *
   `;
   return rec;
 }
 
 async function clockOut(employeeId) {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const nowISO = new Date().toISOString();
+  const cleanId = parseInt(employeeId, 10);
+  if (!cleanId || isNaN(cleanId)) throw new Error('Valid employee ID required for Check Out');
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+  const nowISO = now.toISOString();
 
   const existing = await sql`
-    SELECT * FROM attendance WHERE employee_id = ${employeeId} AND date = ${todayStr}
+    SELECT * FROM attendance 
+    WHERE employee_id = ${cleanId} 
+      AND check_in IS NOT NULL
+      AND check_out IS NULL
+      AND (date = ${todayStr}::date OR (check_in IS NOT NULL AND check_in::date = ${todayStr}::date))
+    ORDER BY id DESC
   `;
 
   if (existing.length === 0) {
-    throw new Error('You must Check In before Check Out. No check-in record found for today.');
+    const err = new Error('No active Check In found for today. Please Check In first.');
+    err.status = 400;
+    throw err;
   }
 
-  if (existing[0].check_out) {
-    throw new Error('Already checked out for today.');
-  }
+  const rec = existing[0];
+  let checkInTime = rec.check_in ? new Date(rec.check_in).getTime() : Date.now();
+  if (isNaN(checkInTime)) checkInTime = Date.now() - (8 * 3600 * 1000);
+  const checkOutTime = Date.now();
+  let workedHours = Math.max(0.01, parseFloat(((checkOutTime - checkInTime) / (1000 * 60 * 60)).toFixed(2)));
 
-  const checkInTime = new Date(existing[0].check_in).getTime();
-  const checkOutTime = new Date(nowISO).getTime();
-  const workedHours = Math.max(0, parseFloat(((checkOutTime - checkInTime) / (1000 * 60 * 60)).toFixed(2)));
-
-  const [rec] = await sql`
+  const [updated] = await sql`
     UPDATE attendance SET
       check_out = ${nowISO},
       worked_hours = ${workedHours},
       status = 'Present'
-    WHERE id = ${existing[0].id}
+    WHERE id = ${rec.id}
     RETURNING *
   `;
-  return rec;
+  return updated;
 }
 
 async function correctAttendance(id, data) {
@@ -85,4 +117,10 @@ async function correctAttendance(id, data) {
   return updated;
 }
 
-module.exports = { getAttendance, clockIn, clockOut, correctAttendance };
+async function deleteAttendance(id) {
+  const cleanId = parseInt(id, 10);
+  const [deleted] = await sql`DELETE FROM attendance WHERE id = ${cleanId} RETURNING *`;
+  return deleted;
+}
+
+module.exports = { getAttendance, clockIn, clockOut, correctAttendance, deleteAttendance };

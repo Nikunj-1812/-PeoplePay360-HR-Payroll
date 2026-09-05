@@ -13,6 +13,8 @@ export default function LoginPage({ onCancel }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const [activeDemoEmail, setActiveDemoEmail] = useState(null);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
@@ -31,6 +33,7 @@ export default function LoginPage({ onCancel }) {
   };
 
   const handleQuickLogin = async (demoEmail, demoPass) => {
+    setActiveDemoEmail(demoEmail);
     setEmail(demoEmail);
     setPassword(demoPass);
     setError(null);
@@ -45,6 +48,7 @@ export default function LoginPage({ onCancel }) {
       toast.error(errMsg);
     } finally {
       setLoading(false);
+      setActiveDemoEmail(null);
     }
   };
 
@@ -79,13 +83,34 @@ export default function LoginPage({ onCancel }) {
         flexDirection: 'column'
       }}>
         {/* Header */}
-        <div style={{ marginBottom: '28px' }}>
-          <div style={{ fontSize: '24px', fontWeight: '800', color: '#B3CFE5', letterSpacing: '-0.5px' }}>
-            PeoplePay360
+        <div style={{ marginBottom: '28px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: '24px', fontWeight: '800', color: '#B3CFE5', letterSpacing: '-0.5px' }}>
+              PeoplePay360
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              HR & Payroll Operations Platform
+            </div>
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            HR & Payroll Operations Platform
-          </div>
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--secondary-blue)',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <ArrowLeft size={14} /> Website
+            </button>
+          )}
         </div>
 
         {error && (
@@ -218,36 +243,17 @@ export default function LoginPage({ onCancel }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
               {demoAccounts.map((acc) => {
                 const Icon = acc.icon;
+                const isLoggingInThis = activeDemoEmail === acc.email;
                 return (
                   <button
                     key={acc.email}
                     onClick={() => handleQuickLogin(acc.email, acc.pass)}
                     disabled={loading}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '12px 14px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--surface)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 150ms ease'
-                    }}
-                    className="hover-card"
+                    className={`demo-account-card ${isLoggingInThis ? 'logging-in' : ''}`}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{
-                        width: '34px',
-                        height: '34px',
-                        borderRadius: '8px',
-                        backgroundColor: 'rgba(74, 127, 167, 0.12)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <Icon size={16} color="var(--secondary-blue)" />
+                      <div className="demo-account-icon">
+                        <Icon size={18} color="var(--secondary-blue)" />
                       </div>
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>
@@ -258,15 +264,8 @@ export default function LoginPage({ onCancel }) {
                         </div>
                       </div>
                     </div>
-                    <span style={{
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      color: '#0A1931',
-                      backgroundColor: '#B3CFE5',
-                      padding: '4px 10px',
-                      borderRadius: '6px'
-                    }}>
-                      Log In
+                    <span className="demo-account-badge">
+                      {isLoggingInThis ? 'Signing in...' : 'Log In →'}
                     </span>
                   </button>
                 );

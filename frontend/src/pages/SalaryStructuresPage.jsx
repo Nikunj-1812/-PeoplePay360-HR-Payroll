@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 import { Sliders, Plus, CheckCircle, ArrowDown, Calculator, Search, Edit2, Trash2, ArrowUp, Layers } from 'lucide-react';
 
 export default function SalaryStructuresPage() {
@@ -28,33 +30,37 @@ export default function SalaryStructuresPage() {
 
   const canManage = ['hr_payroll_manager', 'admin'].includes(user?.role || '');
 
-  const fetchStructures = async (selectId = null) => {
+  const fetchStructures = async (selectId = null, isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const res = await api.getFetch('/salary/structures');
       const list = res.data || [];
       setStructures(list);
       const targetId = selectId || selectedStruct?.id || (list.length > 0 ? list[0].id : null);
       if (targetId) {
-        handleSelectStructure(targetId);
+        handleSelectStructure(targetId, isBackground);
       }
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchStructures();
+    const unsubscribe = subscribeCache(() => {
+      fetchStructures(null, true);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const handleSelectStructure = async (id) => {
+  const handleSelectStructure = async (id, isBackground = false) => {
     try {
       const detail = await api.getFetch(`/salary/structures/${id}`);
       setSelectedStruct(detail.data);
     } catch (err) {
-      toast.error(err.message || 'Failed to fetch salary structure.');
+      if (!isBackground) toast.error(err.message || 'Failed to fetch salary structure.');
     }
   };
 
@@ -170,15 +176,15 @@ export default function SalaryStructuresPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading salary structures...</div>
+        <CenteredSpinner />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px' }}>
           {/* Structures Left List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>Salary Structures ({structures.length})</h3>
-            {structures.map(s => (
+            {structures.map((s, idx) => (
               <div
-                key={s.id}
+                key={`sal-struct-${s.id || idx}-${idx}`}
                 onClick={() => handleSelectStructure(s.id)}
                 className="card"
                 style={{
@@ -259,14 +265,13 @@ export default function SalaryStructuresPage() {
                       <th>Rule Name</th>
                       <th>Category</th>
                       <th>Computation Type</th>
-                      <th>Value / Formula</th>
                       <th>Status</th>
                       {canManage && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedStruct.rules?.map(r => (
-                      <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedRuleDetail(r)}>
+                    {selectedStruct.rules?.map((r, idx) => (
+                      <tr key={`sal-rule-${r.id || idx}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedRuleDetail(r)}>
                         <td style={{ fontWeight: '700', color: 'var(--secondary-navy)' }}>{r.sequence}</td>
                         <td style={{ fontWeight: '700' }}>{r.code}</td>
                         <td>{r.name}</td>
@@ -276,9 +281,6 @@ export default function SalaryStructuresPage() {
                           </span>
                         </td>
                         <td style={{ textTransform: 'capitalize' }}>{r.computation_type}</td>
-                        <td style={{ fontFamily: 'monospace', fontWeight: '600', fontSize: '12px' }}>
-                          {r.computation_type === 'percentage' ? `${r.percentage}% of ${r.percentage_based_on}` : r.computation_type === 'fixed' ? `₹ ${r.amount}` : r.formula_expression}
-                        </td>
                         <td><span className="badge badge-active">Active</span></td>
                         {canManage && (
                           <td onClick={(e) => e.stopPropagation()}>
@@ -365,9 +367,6 @@ export default function SalaryStructuresPage() {
                 <div style={{ gridColumn: 'span 2' }}><strong>Rule Name:</strong> {selectedRuleDetail.name}</div>
                 <div><strong>Category:</strong> {selectedRuleDetail.category}</div>
                 <div><strong>Computation Type:</strong> {selectedRuleDetail.computation_type}</div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <strong>Formula / Value:</strong> {selectedRuleDetail.computation_type === 'percentage' ? `${selectedRuleDetail.percentage}% of ${selectedRuleDetail.percentage_based_on}` : selectedRuleDetail.computation_type === 'fixed' ? `₹ ${selectedRuleDetail.amount}` : selectedRuleDetail.formula_expression}
-                </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button onClick={() => setSelectedRuleDetail(null)} className="btn btn-secondary">Close</button>
@@ -459,13 +458,13 @@ export default function SalaryStructuresPage() {
       {/* Confirmation Modal */}
       {confirmConfig && (
         <ConfirmDialog
-          open={Boolean(confirmConfig)}
-          onClose={() => setConfirmConfig(null)}
+          isOpen={Boolean(confirmConfig)}
+          onCancel={() => setConfirmConfig(null)}
           onConfirm={confirmConfig.onConfirm}
           title={confirmConfig.title}
-          description={confirmConfig.description}
+          message={confirmConfig.description || confirmConfig.message}
           confirmText={confirmConfig.confirmText}
-          variant={confirmConfig.variant || 'primary'}
+          confirmVariant={confirmConfig.variant || 'primary'}
         />
       )}
     </div>

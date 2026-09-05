@@ -1,4 +1,5 @@
 const { sql } = require('../db');
+const notificationService = require('./notificationService');
 
 // Get time off types
 async function getTimeOffTypes() {
@@ -40,6 +41,7 @@ async function deleteTimeOffType(id) {
 
 // Get allocations
 async function getAllocations(employeeId = null) {
+  const cleanEmpId = employeeId && !isNaN(employeeId) ? parseInt(employeeId, 10) : null;
   return await sql`
     SELECT 
       toa.*,
@@ -50,7 +52,7 @@ async function getAllocations(employeeId = null) {
     FROM time_off_allocations toa
     JOIN employees e ON toa.employee_id = e.id
     JOIN time_off_types tot ON toa.time_off_type_id = tot.id
-    WHERE (${employeeId ? parseInt(employeeId, 10) : null}::int IS NULL OR toa.employee_id = ${employeeId ? parseInt(employeeId, 10) : null})
+    WHERE (${cleanEmpId}::int IS NULL OR toa.employee_id = ${cleanEmpId})
     ORDER BY toa.id DESC
   `;
 }
@@ -97,6 +99,8 @@ async function deleteAllocation(id) {
 
 // Get time off requests
 async function getRequests(filters = {}) {
+  const cleanEmpId = filters.employee_id && !isNaN(filters.employee_id) ? parseInt(filters.employee_id, 10) : null;
+  const cleanStatus = filters.status || null;
   return await sql`
     SELECT 
       tor.*,
@@ -110,8 +114,8 @@ async function getRequests(filters = {}) {
     JOIN employees e ON tor.employee_id = e.id
     LEFT JOIN departments d ON e.department_id = d.id
     JOIN time_off_types tot ON tor.time_off_type_id = tot.id
-    WHERE (${filters.employee_id ? parseInt(filters.employee_id, 10) : null}::int IS NULL OR tor.employee_id = ${filters.employee_id ? parseInt(filters.employee_id, 10) : null})
-      AND (${filters.status || null}::text IS NULL OR tor.status = ${filters.status || null})
+    WHERE (${cleanEmpId}::int IS NULL OR tor.employee_id = ${cleanEmpId})
+      AND (${cleanStatus}::text IS NULL OR tor.status = ${cleanStatus})
     ORDER BY tor.id DESC
   `;
 }
@@ -129,7 +133,9 @@ async function createRequest(data) {
       ORDER BY id DESC LIMIT 1
     `;
     if (allocations.length === 0 || parseFloat(allocations[0].remaining_days) < parseFloat(duration)) {
-      throw new Error(`Insufficient leave balance. Available: ${allocations.length > 0 ? allocations[0].remaining_days : 0} days.`);
+      const err = new Error(`Insufficient leave balance. Available: ${allocations.length > 0 ? allocations[0].remaining_days : 0} days.`);
+      err.status = 400;
+      throw err;
     }
   }
 
@@ -138,6 +144,21 @@ async function createRequest(data) {
     VALUES (${employee_id}, ${time_off_type_id}, ${start_date}, ${end_date}, ${duration}, 'Pending', ${reason || ''})
     RETURNING *
   `;
+
+  // Notify HR Managers & Admins
+  try {
+    const [emp] = await sql`SELECT first_name, last_name FROM employees WHERE id = ${employee_id}`;
+    const empName = emp ? `${emp.first_name} ${emp.last_name}` : `Employee #${employee_id}`;
+    await notificationService.notifyRoles(['admin', 'hr_manager', 'hr_payroll_manager'], {
+      title: 'New Leave Request',
+      message: `${empName} requested ${duration} day(s) of leave (${types[0]?.name || 'Time Off'}).`,
+      type: 'leave',
+      link_tab: 'time-off'
+    });
+  } catch (err) {
+    console.error('Notification trigger error:', err);
+  }
+
   return req;
 }
 
@@ -189,6 +210,18 @@ async function approveRequest(id, approverName = 'HR Manager') {
     RETURNING *
   `;
 
+  // Notify Employee
+  try {
+    await notificationService.notifyEmployeeUser(req.employee_id, {
+      title: 'Leave Request Approved',
+      message: `Your leave request for ${req.duration} day(s) was APPROVED by ${approverName}.`,
+      type: 'leave',
+      link_tab: 'time-off'
+    });
+  } catch (err) {
+    console.error('Notification trigger error:', err);
+  }
+
   return updated;
 }
 
@@ -201,7 +234,29 @@ async function refuseRequest(id, approverName = 'HR Manager') {
     WHERE id = ${id}
     RETURNING *
   `;
+
+  // Notify Employee
+  try {
+    if (updated) {
+      await notificationService.notifyEmployeeUser(updated.employee_id, {
+        title: 'Leave Request Refused',
+        message: `Your leave request for ${updated.duration} day(s) was REFUSED by ${approverName}.`,
+        type: 'leave',
+        link_tab: 'time-off'
+      });
+    }
+  } catch (err) {
+    console.error('Notification trigger error:', err);
+  }
+
   return updated;
+}
+
+// Delete time off request
+async function deleteRequest(id) {
+  const cleanId = parseInt(id, 10);
+  const [deleted] = await sql`DELETE FROM time_off_requests WHERE id = ${cleanId} RETURNING *`;
+  return deleted;
 }
 
 module.exports = {
@@ -216,5 +271,6 @@ module.exports = {
   getRequests,
   createRequest,
   approveRequest,
-  refuseRequest
+  refuseRequest,
+  deleteRequest
 };

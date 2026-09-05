@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
-import { Settings, Shield, User, Database, Server, Plus, Search, Edit2, Key, Trash2, CheckCircle, UserCheck } from 'lucide-react';
+import { CenteredSpinner } from '../components/ui/Loading';
+import { Settings, User, Plus, Search, Edit2, Key, Trash2, CheckCircle, UserCheck } from 'lucide-react';
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -27,9 +29,9 @@ export default function SettingsPage() {
   });
   const [newPassword, setNewPassword] = useState('');
 
-  const fetchUsersAndEmployees = async () => {
+  const fetchUsersAndEmployees = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const [usersRes, empRes] = await Promise.all([
         api.getFetch('/auth/users'),
         api.getFetch('/employees')
@@ -39,12 +41,16 @@ export default function SettingsPage() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchUsersAndEmployees();
+    const unsubscribe = subscribeCache(() => {
+      fetchUsersAndEmployees(true);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleCreateUser = async (e) => {
@@ -137,32 +143,7 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {/* System Status Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Database size={24} color="var(--secondary-blue)" />
-          <div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>DATABASE ENGINE</div>
-            <div style={{ fontSize: '15px', fontWeight: '700' }}>Neon PostgreSQL</div>
-          </div>
-        </div>
 
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Server size={24} color="#10B981" />
-          <div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>BACKEND SERVICE</div>
-            <div style={{ fontSize: '15px', fontWeight: '700' }}>Express Node.js</div>
-          </div>
-        </div>
-
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Shield size={24} color="var(--primary-text)" />
-          <div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>SECURITY ENGINE</div>
-            <div style={{ fontSize: '15px', fontWeight: '700' }}>JWT + 5-Tier RBAC</div>
-          </div>
-        </div>
-      </div>
 
       {/* Filter / Search Bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -185,7 +166,7 @@ export default function SettingsPage() {
           Configured System Users ({filteredUsers.length})
         </h3>
         {loading ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading users...</div>
+          <CenteredSpinner />
         ) : (
           <div className="data-table-container">
             <table className="data-table">
@@ -201,8 +182,8 @@ export default function SettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map(u => (
-                  <tr key={u.id}>
+                {filteredUsers.map((u, idx) => (
+                  <tr key={`user-row-${u.id || idx}-${idx}`}>
                     <td>#{u.id}</td>
                     <td style={{ fontWeight: '600' }}>{u.name}</td>
                     <td>{u.email}</td>
@@ -297,8 +278,8 @@ export default function SettingsPage() {
                   <label className="form-label">Link to Employee Profile (Optional)</label>
                   <select className="form-select" value={createForm.employee_id} onChange={(e) => setCreateForm({ ...createForm, employee_id: e.target.value })}>
                     <option value="">-- No Linked Employee (Admin/HR User) --</option>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
+                    {employees.map((emp, idx) => (
+                      <option key={`settings-create-emp-${emp.id || idx}-${idx}`} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
                     ))}
                   </select>
                 </div>
@@ -344,8 +325,8 @@ export default function SettingsPage() {
                   <label className="form-label">Linked Employee Profile</label>
                   <select className="form-select" value={editForm.employee_id} onChange={(e) => setEditForm({ ...editForm, employee_id: e.target.value })}>
                     <option value="">-- No Linked Employee --</option>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
+                    {employees.map((emp, idx) => (
+                      <option key={`settings-edit-emp-${emp.id || idx}-${idx}`} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
                     ))}
                   </select>
                 </div>

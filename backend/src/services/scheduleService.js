@@ -17,9 +17,14 @@ function calculateWeeklyHours(data) {
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   let weekly = 0;
   for (const day of days) {
-    weekly += calculateHours(data[`${day}_start`], data[`${day}_end`], data[`${day}_break`]);
+    const start = data[`${day}_start`] !== undefined ? data[`${day}_start`] : (day !== 'saturday' && day !== 'sunday' ? '09:00' : '');
+    const end = data[`${day}_end`] !== undefined ? data[`${day}_end`] : (day !== 'saturday' && day !== 'sunday' ? '18:00' : '');
+    const brk = data[`${day}_break`] !== undefined ? data[`${day}_break`] : (day !== 'saturday' && day !== 'sunday' ? '01:00' : '');
+    if (start && end) {
+      weekly += calculateHours(start, end, brk);
+    }
   }
-  return parseFloat(weekly.toFixed(2));
+  return weekly > 0 ? parseFloat(weekly.toFixed(2)) : 40.0;
 }
 
 // Get all working schedules

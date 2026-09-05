@@ -86,12 +86,41 @@ async function createUser(data) {
   const { name, email, password, role, employee_id } = data;
   const cleanEmail = String(email).trim().toLowerCase();
   const passwordHash = await bcrypt.hash(password || 'PeoplePay@123', 10);
+  let targetEmpId = employee_id ? parseInt(employee_id, 10) : null;
+
+  // Link users created from an existing employee email automatically.
+  if (!targetEmpId) {
+    const [matchingEmployee] = await sql`
+      SELECT id FROM employees
+      WHERE LOWER(TRIM(email)) = ${cleanEmail}
+      LIMIT 1
+    `;
+    targetEmpId = matchingEmployee?.id || null;
+  }
 
   const [user] = await sql`
     INSERT INTO users (name, email, password_hash, role, employee_id)
-    VALUES (${name}, ${cleanEmail}, ${passwordHash}, ${role || 'employee'}, ${employee_id || null})
+    VALUES (${name}, ${cleanEmail}, ${passwordHash}, ${role || 'employee'}, ${targetEmpId})
     RETURNING id, name, email, role, employee_id, created_at
   `;
+
+  if (targetEmpId) {
+    const roleTitleMap = {
+      'admin': 'Admin',
+      'hr_payroll_manager': 'HR Payroll Manager',
+      'hr_payroll_user': 'HR Payroll User',
+      'hr_manager': 'HR Manager',
+      'employee': 'Employee'
+    };
+    const newPosition = roleTitleMap[role] || 'Employee';
+    await sql`
+      UPDATE employees SET
+        email = ${cleanEmail},
+        job_position = ${newPosition}
+      WHERE id = ${targetEmpId}
+    `;
+  }
+
   return user;
 }
 
@@ -99,16 +128,35 @@ async function createUser(data) {
 async function updateUser(id, data) {
   const { name, email, role, employee_id } = data;
   const cleanEmail = String(email).trim().toLowerCase();
+  const targetEmpId = employee_id ? parseInt(employee_id, 10) : null;
 
   const [user] = await sql`
     UPDATE users SET
       name = ${name},
       email = ${cleanEmail},
       role = ${role},
-      employee_id = ${employee_id || null}
-    WHERE id = ${id}
+      employee_id = ${targetEmpId}
+    WHERE id = ${parseInt(id, 10)}
     RETURNING id, name, email, role, employee_id
   `;
+
+  if (targetEmpId) {
+    const roleTitleMap = {
+      'admin': 'Admin',
+      'hr_payroll_manager': 'HR Payroll Manager',
+      'hr_payroll_user': 'HR Payroll User',
+      'hr_manager': 'HR Manager',
+      'employee': 'Employee'
+    };
+    const newPosition = roleTitleMap[role] || 'Employee';
+    await sql`
+      UPDATE employees SET
+        email = ${cleanEmail},
+        job_position = ${newPosition}
+      WHERE id = ${targetEmpId}
+    `;
+  }
+
   return user;
 }
 
