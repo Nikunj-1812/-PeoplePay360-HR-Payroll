@@ -1,27 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Sliders, Plus, CheckCircle, ArrowDown, Calculator, Search } from 'lucide-react';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { Sliders, Plus, CheckCircle, ArrowDown, Calculator, Search, Edit2, Trash2, ArrowUp, Layers } from 'lucide-react';
 
 export default function SalaryStructuresPage() {
+  const { user } = useAuth();
   const toast = useToast();
   const [structures, setStructures] = useState([]);
   const [selectedStruct, setSelectedStruct] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showRuleModal, setShowRuleModal] = useState(false);
-  const [selectedRule, setSelectedRule] = useState(null);
 
+  // Modals state
+  const [showStructModal, setShowStructModal] = useState(false);
+  const [showRuleModal, setShowRuleModal] = useState(false);
+  const [editingStruct, setEditingStruct] = useState(null);
+  const [editingRule, setEditingRule] = useState(null);
+  const [selectedRuleDetail, setSelectedRuleDetail] = useState(null);
+  const [confirmConfig, setConfirmConfig] = useState(null);
+
+  // Forms
+  const [structForm, setStructForm] = useState({ name: '', description: '' });
   const [ruleForm, setRuleForm] = useState({
     name: '', code: '', category: 'allowance', sequence: 25, computation_type: 'percentage', amount: 0, percentage: 10, percentage_based_on: 'BASIC', formula_expression: ''
   });
 
-  const fetchStructures = async () => {
+  const canManage = ['hr_payroll_manager', 'admin'].includes(user?.role || '');
+
+  const fetchStructures = async (selectId = null) => {
     try {
       setLoading(true);
       const res = await api.getFetch('/salary/structures');
-      setStructures(res.data || []);
-      if (res.data?.length > 0 && !selectedStruct) {
-        handleSelectStructure(res.data[0].id);
+      const list = res.data || [];
+      setStructures(list);
+      const targetId = selectId || selectedStruct?.id || (list.length > 0 ? list[0].id : null);
+      if (targetId) {
+        handleSelectStructure(targetId);
       }
     } catch (err) {
       console.error(err);
@@ -43,36 +58,124 @@ export default function SalaryStructuresPage() {
     }
   };
 
-  const handleCreateRule = async (e) => {
+  const handleSaveStructure = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/salary/rules', {
-        ...ruleForm,
-        salary_structure_id: selectedStruct.id
-      });
+      if (editingStruct) {
+        await api.put(`/salary/structures/${editingStruct.id}`, structForm);
+        toast.success('Salary structure updated.');
+      } else {
+        const res = await api.post('/salary/structures', structForm);
+        toast.success('Salary structure created.');
+        if (res.data?.id) handleSelectStructure(res.data.id);
+      }
+      api.invalidate(['salary', 'payruns', 'dashboard']);
+      setShowStructModal(false);
+      setEditingStruct(null);
+      setStructForm({ name: '', description: '' });
+      fetchStructures();
+    } catch (err) {
+      toast.error(err.message || 'Failed to save salary structure.');
+    }
+  };
+
+  const handleDeleteStructure = (s) => {
+    setConfirmConfig({
+      title: 'Delete Salary Structure',
+      description: `Are you sure you want to delete "${s.name}"? Rules attached will be removed.`,
+      confirmText: 'Delete Structure',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/salary/structures/${s.id}`);
+          api.invalidate(['salary', 'payruns', 'dashboard']);
+          toast.info('Salary structure deleted.');
+          setSelectedStruct(null);
+          fetchStructures();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete structure.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
+  };
+
+  const handleSaveRule = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingRule) {
+        await api.put(`/salary/rules/${editingRule.id}`, {
+          ...ruleForm,
+          salary_structure_id: selectedStruct.id
+        });
+        toast.success('Salary rule updated successfully.');
+      } else {
+        await api.post('/salary/rules', {
+          ...ruleForm,
+          salary_structure_id: selectedStruct.id
+        });
+        toast.success('Salary rule created successfully.');
+      }
       api.invalidate(['salary', 'payruns', 'dashboard']);
       setShowRuleModal(false);
-      toast.success('Salary rule created successfully.');
+      setEditingRule(null);
       handleSelectStructure(selectedStruct.id);
     } catch (err) {
-      toast.error(err.message || 'Failed to create rule.');
+      toast.error(err.message || 'Failed to save rule.');
     }
+  };
+
+  const handleDeleteRule = (r) => {
+    setConfirmConfig({
+      title: 'Delete Salary Rule',
+      description: `Are you sure you want to delete rule "${r.name}" (${r.code})?`,
+      confirmText: 'Delete Rule',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/salary/rules/${r.id}`);
+          api.invalidate(['salary', 'payruns', 'dashboard']);
+          toast.info('Salary rule deleted.');
+          handleSelectStructure(selectedStruct.id);
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete rule.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div>
-        <h1 style={{ fontSize: '22px', fontWeight: '700' }}>Salary Structures & Ordered Rules Engine</h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Configurable standalone salary component computation sequence driving payroll computation</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+        <div>
+          <h1 style={{ fontSize: '22px', fontWeight: '700' }}>Salary Structures & Ordered Rules Engine</h1>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Configurable standalone salary component computation sequence driving payroll computation</p>
+        </div>
+
+        {canManage && (
+          <button
+            onClick={() => {
+              setEditingStruct(null);
+              setStructForm({ name: '', description: '' });
+              setShowStructModal(true);
+            }}
+            className="btn btn-primary"
+          >
+            <Plus size={16} /> New Structure
+          </button>
+        )}
       </div>
 
       {loading ? (
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading salary structures...</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px' }}>
           {/* Structures Left List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>Salary Structures</h3>
+            <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>Salary Structures ({structures.length})</h3>
             {structures.map(s => (
               <div
                 key={s.id}
@@ -84,8 +187,35 @@ export default function SalaryStructuresPage() {
                   backgroundColor: selectedStruct?.id === s.id ? 'rgba(179, 207, 229, 0.1)' : 'var(--card-bg)'
                 }}
               >
-                <div style={{ fontWeight: '700', fontSize: '15px' }}>{s.name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>{s.description || 'Standard India Salary'}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontWeight: '700', fontSize: '15px' }}>{s.name}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>{s.description || 'Standard India Salary'}</div>
+                  </div>
+                  {canManage && (
+                    <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => {
+                          setEditingStruct(s);
+                          setStructForm({ name: s.name, description: s.description || '' });
+                          setShowStructModal(true);
+                        }}
+                        className="btn btn-secondary"
+                        style={{ padding: '2px 4px' }}
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteStructure(s)}
+                        className="btn btn-danger"
+                        style={{ padding: '2px 4px' }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', fontSize: '12px' }}>
                   <span style={{ fontWeight: '600' }}>{s.rule_count || 0} Rules</span>
                   <span className="badge badge-active">Active</span>
@@ -100,11 +230,23 @@ export default function SalaryStructuresPage() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <h2 style={{ fontSize: '18px', fontWeight: '700' }}>{selectedStruct.name}</h2>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Execution Sequence: Rules are calculated strictly top-to-bottom by sequence order.</p>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Execution Sequence: Rules execute strictly top-to-bottom according to Sequence index.</p>
                 </div>
-                <button onClick={() => setShowRuleModal(true)} className="btn btn-primary">
-                  <Plus size={16} /> Add Salary Rule
-                </button>
+                {canManage && (
+                  <button
+                    onClick={() => {
+                      setEditingRule(null);
+                      setRuleForm({
+                        name: '', code: '', category: 'allowance', sequence: (selectedStruct.rules?.length || 0) * 10 + 10,
+                        computation_type: 'percentage', amount: 0, percentage: 10, percentage_based_on: 'BASIC', formula_expression: ''
+                      });
+                      setShowRuleModal(true);
+                    }}
+                    className="btn btn-primary"
+                  >
+                    <Plus size={16} /> Add Salary Rule
+                  </button>
+                )}
               </div>
 
               {/* Rules Sequence Table */}
@@ -119,11 +261,12 @@ export default function SalaryStructuresPage() {
                       <th>Computation Type</th>
                       <th>Value / Formula</th>
                       <th>Status</th>
+                      {canManage && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {selectedStruct.rules?.map(r => (
-                      <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedRule(r)}>
+                      <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedRuleDetail(r)}>
                         <td style={{ fontWeight: '700', color: 'var(--secondary-navy)' }}>{r.sequence}</td>
                         <td style={{ fontWeight: '700' }}>{r.code}</td>
                         <td>{r.name}</td>
@@ -137,6 +280,40 @@ export default function SalaryStructuresPage() {
                           {r.computation_type === 'percentage' ? `${r.percentage}% of ${r.percentage_based_on}` : r.computation_type === 'fixed' ? `₹ ${r.amount}` : r.formula_expression}
                         </td>
                         <td><span className="badge badge-active">Active</span></td>
+                        {canManage && (
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                onClick={() => {
+                                  setEditingRule(r);
+                                  setRuleForm({
+                                    name: r.name,
+                                    code: r.code,
+                                    category: r.category || 'allowance',
+                                    sequence: r.sequence || 10,
+                                    computation_type: r.computation_type || 'fixed',
+                                    amount: r.amount || 0,
+                                    percentage: r.percentage || 0,
+                                    percentage_based_on: r.percentage_based_on || 'BASIC',
+                                    formula_expression: r.formula_expression || ''
+                                  });
+                                  setShowRuleModal(true);
+                                }}
+                                className="btn btn-secondary"
+                                style={{ padding: '3px 6px', fontSize: '11px' }}
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteRule(r)}
+                                className="btn btn-danger"
+                                style={{ padding: '3px 6px', fontSize: '11px' }}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -147,42 +324,68 @@ export default function SalaryStructuresPage() {
         </div>
       )}
 
+      {/* Salary Structure Create / Edit Modal */}
+      {showStructModal && (
+        <div className="modal-overlay" onClick={() => setShowStructModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '460px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">{editingStruct ? 'Edit Structure' : 'New Salary Structure'}</h3>
+              <button onClick={() => setShowStructModal(false)} className="btn btn-secondary">✕</button>
+            </div>
+            <form onSubmit={handleSaveStructure}>
+              <div className="form-group">
+                <label className="form-label">Structure Name</label>
+                <input type="text" required placeholder="e.g. Standard Executive Structure" className="form-input" value={structForm.name} onChange={(e) => setStructForm({ ...structForm, name: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Description</label>
+                <textarea className="form-textarea" rows={3} placeholder="Brief summary of this structure's purpose..." value={structForm.description} onChange={(e) => setStructForm({ ...structForm, description: e.target.value })} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+                <button type="button" onClick={() => setShowStructModal(false)} className="btn btn-secondary">Cancel</button>
+                <button type="submit" className="btn btn-primary">{editingStruct ? 'Save Changes' : 'Create Structure'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Salary Rule Detail Modal */}
-      {selectedRule && (
-        <div className="modal-overlay" onClick={() => setSelectedRule(null)}>
+      {selectedRuleDetail && (
+        <div className="modal-overlay" onClick={() => setSelectedRuleDetail(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
             <div className="modal-header">
               <h3 className="modal-title">Salary Rule Detail</h3>
-              <button onClick={() => setSelectedRule(null)} className="btn btn-secondary">✕</button>
+              <button onClick={() => setSelectedRuleDetail(null)} className="btn btn-secondary">✕</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '8px', fontSize: '13px' }}>
-                <div><strong>Rule Code:</strong> {selectedRule.code}</div>
-                <div><strong>Sequence:</strong> {selectedRule.sequence}</div>
-                <div style={{ gridColumn: 'span 2' }}><strong>Rule Name:</strong> {selectedRule.name}</div>
-                <div><strong>Category:</strong> {selectedRule.category}</div>
-                <div><strong>Computation Type:</strong> {selectedRule.computation_type}</div>
+                <div><strong>Rule Code:</strong> {selectedRuleDetail.code}</div>
+                <div><strong>Sequence:</strong> {selectedRuleDetail.sequence}</div>
+                <div style={{ gridColumn: 'span 2' }}><strong>Rule Name:</strong> {selectedRuleDetail.name}</div>
+                <div><strong>Category:</strong> {selectedRuleDetail.category}</div>
+                <div><strong>Computation Type:</strong> {selectedRuleDetail.computation_type}</div>
                 <div style={{ gridColumn: 'span 2' }}>
-                  <strong>Formula / Value:</strong> {selectedRule.computation_type === 'percentage' ? `${selectedRule.percentage}% of ${selectedRule.percentage_based_on}` : selectedRule.computation_type === 'fixed' ? `₹ ${selectedRule.amount}` : selectedRule.formula_expression}
+                  <strong>Formula / Value:</strong> {selectedRuleDetail.computation_type === 'percentage' ? `${selectedRuleDetail.percentage}% of ${selectedRuleDetail.percentage_based_on}` : selectedRuleDetail.computation_type === 'fixed' ? `₹ ${selectedRuleDetail.amount}` : selectedRuleDetail.formula_expression}
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={() => setSelectedRule(null)} className="btn btn-secondary">Close</button>
+                <button onClick={() => setSelectedRuleDetail(null)} className="btn btn-secondary">Close</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* New Salary Rule Modal */}
+      {/* New / Edit Salary Rule Modal */}
       {showRuleModal && (
         <div className="modal-overlay" onClick={() => setShowRuleModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Add Salary Rule to {selectedStruct?.name}</h3>
+              <h3 className="modal-title">{editingRule ? 'Edit Salary Rule' : `Add Salary Rule to ${selectedStruct?.name}`}</h3>
               <button onClick={() => setShowRuleModal(false)} className="btn btn-secondary">✕</button>
             </div>
-            <form onSubmit={handleCreateRule}>
+            <form onSubmit={handleSaveRule}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="form-group">
                   <label className="form-label">Rule Name</label>
@@ -236,15 +439,34 @@ export default function SalaryStructuresPage() {
                     <input type="number" className="form-input" value={ruleForm.amount} onChange={(e) => setRuleForm({ ...ruleForm, amount: parseFloat(e.target.value) })} />
                   </div>
                 )}
+                {ruleForm.computation_type === 'formula' && (
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label className="form-label">Formula Expression</label>
+                    <input type="text" placeholder="e.g. BASIC * 0.4 + HRA" className="form-input" value={ruleForm.formula_expression} onChange={(e) => setRuleForm({ ...ruleForm, formula_expression: e.target.value })} />
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
                 <button type="button" onClick={() => setShowRuleModal(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Rule</button>
+                <button type="submit" className="btn btn-primary">{editingRule ? 'Save Changes' : 'Save Rule'}</button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmConfig && (
+        <ConfirmDialog
+          open={Boolean(confirmConfig)}
+          onClose={() => setConfirmConfig(null)}
+          onConfirm={confirmConfig.onConfirm}
+          title={confirmConfig.title}
+          description={confirmConfig.description}
+          confirmText={confirmConfig.confirmText}
+          variant={confirmConfig.variant || 'primary'}
+        />
       )}
     </div>
   );

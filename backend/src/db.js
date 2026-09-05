@@ -43,6 +43,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const rawDbUrl = (process.env.DATABASE_URL || '').trim();
+let sql;
 
 if (rawDbUrl) {
   const cleanDbUrl = rawDbUrl

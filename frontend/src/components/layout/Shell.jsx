@@ -6,7 +6,8 @@ import ConfirmDialog from '../ui/ConfirmDialog';
 import { 
   LayoutDashboard, Users, FileText, CalendarDays, Clock, 
   WalletCards, Receipt, Sliders, Settings, Sun, Moon, 
-  Search, Bell, UserCheck, ShieldCheck, ChevronDown, LogOut
+  Search, Bell, UserCheck, ShieldCheck, ChevronDown, LogOut,
+  FileSpreadsheet
 } from 'lucide-react';
 
 export default function Shell({ activeTab, setActiveTab, children }) {
@@ -27,6 +28,7 @@ export default function Shell({ activeTab, setActiveTab, children }) {
     { id: 'time-off', label: 'Time Off', icon: WalletCards, roles: ['employee', 'hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'] },
     { id: 'payroll', label: 'Payruns', icon: Receipt, roles: ['hr_payroll_user', 'hr_payroll_manager', 'admin'] },
     { id: 'structures', label: 'Salary Structures', icon: Sliders, roles: ['hr_payroll_user', 'hr_payroll_manager', 'admin'] },
+    { id: 'reports', label: 'Reports', icon: FileSpreadsheet, roles: ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'] },
     { id: 'settings', label: 'Settings & Users', icon: Settings, roles: ['admin'] }
   ];
 

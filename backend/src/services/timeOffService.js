@@ -1,9 +1,44 @@
 const { sql } = require('../db');
 
+// Get time off types
 async function getTimeOffTypes() {
   return await sql`SELECT * FROM time_off_types ORDER BY id ASC`;
 }
 
+// Create time off type
+async function createTimeOffType(data) {
+  const { name, unit, requires_allocation, approval_workflow, payroll_integration } = data;
+  const [created] = await sql`
+    INSERT INTO time_off_types (name, unit, requires_allocation, approval_workflow, payroll_integration)
+    VALUES (${name}, ${unit || 'days'}, ${requires_allocation !== false}, ${approval_workflow || 'Manager'}, ${payroll_integration !== false})
+    RETURNING *
+  `;
+  return created;
+}
+
+// Update time off type
+async function updateTimeOffType(id, data) {
+  const { name, unit, requires_allocation, approval_workflow, payroll_integration } = data;
+  const [updated] = await sql`
+    UPDATE time_off_types SET
+      name = ${name},
+      unit = ${unit || 'days'},
+      requires_allocation = ${requires_allocation !== false},
+      approval_workflow = ${approval_workflow || 'Manager'},
+      payroll_integration = ${payroll_integration !== false}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return updated;
+}
+
+// Delete time off type
+async function deleteTimeOffType(id) {
+  const [deleted] = await sql`DELETE FROM time_off_types WHERE id = ${id} RETURNING *`;
+  return deleted;
+}
+
+// Get allocations
 async function getAllocations(employeeId = null) {
   return await sql`
     SELECT 
@@ -20,6 +55,47 @@ async function getAllocations(employeeId = null) {
   `;
 }
 
+// Create allocation
+async function createAllocation(data) {
+  const { employee_id, time_off_type_id, allocated_days, validity_start, validity_end } = data;
+  const days = parseFloat(allocated_days) || 0;
+
+  const [alloc] = await sql`
+    INSERT INTO time_off_allocations (employee_id, time_off_type_id, allocated_days, taken_days, remaining_days, status, validity_start, validity_end)
+    VALUES (${employee_id}, ${time_off_type_id}, ${days}, 0, ${days}, 'Approved', ${validity_start || '2026-01-01'}, ${validity_end || '2026-12-31'})
+    RETURNING *
+  `;
+  return alloc;
+}
+
+// Update allocation
+async function updateAllocation(id, data) {
+  const { allocated_days, taken_days, validity_start, validity_end, status } = data;
+  const allocDays = parseFloat(allocated_days) || 0;
+  const takenDays = parseFloat(taken_days) || 0;
+  const remDays = Math.max(0, allocDays - takenDays);
+
+  const [updated] = await sql`
+    UPDATE time_off_allocations SET
+      allocated_days = ${allocDays},
+      taken_days = ${takenDays},
+      remaining_days = ${remDays},
+      validity_start = ${validity_start || '2026-01-01'},
+      validity_end = ${validity_end || '2026-12-31'},
+      status = ${status || 'Approved'}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return updated;
+}
+
+// Delete allocation
+async function deleteAllocation(id) {
+  const [deleted] = await sql`DELETE FROM time_off_allocations WHERE id = ${id} RETURNING *`;
+  return deleted;
+}
+
+// Get time off requests
 async function getRequests(filters = {}) {
   return await sql`
     SELECT 
@@ -40,8 +116,22 @@ async function getRequests(filters = {}) {
   `;
 }
 
+// Create time off request
 async function createRequest(data) {
   const { employee_id, time_off_type_id, start_date, end_date, duration, reason } = data;
+
+  // Check type allocation requirement
+  const types = await sql`SELECT * FROM time_off_types WHERE id = ${time_off_type_id}`;
+  if (types.length > 0 && types[0].requires_allocation) {
+    const allocations = await sql`
+      SELECT * FROM time_off_allocations
+      WHERE employee_id = ${employee_id} AND time_off_type_id = ${time_off_type_id} AND status = 'Approved'
+      ORDER BY id DESC LIMIT 1
+    `;
+    if (allocations.length === 0 || parseFloat(allocations[0].remaining_days) < parseFloat(duration)) {
+      throw new Error(`Insufficient leave balance. Available: ${allocations.length > 0 ? allocations[0].remaining_days : 0} days.`);
+    }
+  }
 
   const [req] = await sql`
     INSERT INTO time_off_requests (employee_id, time_off_type_id, start_date, end_date, duration, status, reason)
@@ -51,6 +141,7 @@ async function createRequest(data) {
   return req;
 }
 
+// Approve time off request and update allocation balance
 async function approveRequest(id, approverName = 'HR Manager') {
   const requests = await sql`
     SELECT tor.*, tot.requires_allocation
@@ -101,6 +192,7 @@ async function approveRequest(id, approverName = 'HR Manager') {
   return updated;
 }
 
+// Refuse time off request
 async function refuseRequest(id, approverName = 'HR Manager') {
   const [updated] = await sql`
     UPDATE time_off_requests SET
@@ -112,4 +204,17 @@ async function refuseRequest(id, approverName = 'HR Manager') {
   return updated;
 }
 
-module.exports = { getTimeOffTypes, getAllocations, getRequests, createRequest, approveRequest, refuseRequest };
+module.exports = {
+  getTimeOffTypes,
+  createTimeOffType,
+  updateTimeOffType,
+  deleteTimeOffType,
+  getAllocations,
+  createAllocation,
+  updateAllocation,
+  deleteAllocation,
+  getRequests,
+  createRequest,
+  approveRequest,
+  refuseRequest
+};

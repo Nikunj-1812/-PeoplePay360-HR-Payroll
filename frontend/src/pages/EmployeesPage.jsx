@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
-import { Search, Plus, LayoutGrid, List, User, Mail, Phone, Building2, Briefcase, FileText, Clock, WalletCards, Receipt } from 'lucide-react';
+import { formatDate } from '../utils/dateUtils';
+import { Search, Plus, LayoutGrid, List, User, Mail, Phone, Building2, Briefcase, FileText, Clock, WalletCards, Receipt, History, Award } from 'lucide-react';
 
 export default function EmployeesPage({ onNavigateTab }) {
   const toast = useToast();
@@ -10,6 +11,8 @@ export default function EmployeesPage({ onNavigateTab }) {
   const [viewMode, setViewMode] = useState('kanban');
   const [search, setSearch] = useState('');
   const [selectedEmp, setSelectedEmp] = useState(null);
+  const [empHistory, setEmpHistory] = useState(null);
+  const [modalTab, setModalTab] = useState('overview'); // 'overview' | 'history'
   const [showFormModal, setShowFormModal] = useState(false);
 
   // Form State
@@ -36,8 +39,13 @@ export default function EmployeesPage({ onNavigateTab }) {
 
   const handleOpenDetail = async (id) => {
     try {
-      const res = await api.getFetch(`/employees/${id}`);
-      setSelectedEmp(res.data);
+      setModalTab('overview');
+      const [detailRes, histRes] = await Promise.all([
+        api.getFetch(`/employees/${id}`),
+        api.getFetch(`/employees/${id}/history`)
+      ]);
+      setSelectedEmp(detailRes.data);
+      setEmpHistory(histRes.data);
     } catch (err) {
       toast.error(err.message || 'Failed to fetch employee detail.');
     }
@@ -212,52 +220,130 @@ export default function EmployeesPage({ onNavigateTab }) {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px' }}>
-                <div><strong>Department:</strong> {selectedEmp.department_name || 'N/A'}</div>
-                <div><strong>Phone:</strong> {selectedEmp.phone || 'N/A'}</div>
-                <div><strong>Schedule:</strong> {selectedEmp.schedule_name || 'Standard 40h'}</div>
-                <div><strong>Bank Account:</strong> {selectedEmp.account_number ? `${selectedEmp.bank_name} (${selectedEmp.account_number})` : '⚠ Missing Bank Info'}</div>
+              {/* Modal Tabs */}
+              <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setModalTab('overview')}
+                  className={`btn ${modalTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                >
+                  <User size={14} /> Overview & Smart Links
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalTab('history')}
+                  className={`btn ${modalTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                >
+                  <History size={14} /> Employment History
+                </button>
               </div>
 
-              {/* SMART LINKS SECTION */}
-              <div style={{ backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px', color: 'var(--text-main)' }}>
-                  EMPLOYEE OPERATIONAL HUB (SMART LINKS)
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
-                  <button
-                    onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('contracts'); }}
-                    className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
-                  >
-                    <FileText size={18} color="var(--secondary-blue)" />
-                    <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.contracts || 0} Contracts</span>
-                  </button>
+              {modalTab === 'overview' ? (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px' }}>
+                    <div><strong>Department:</strong> {selectedEmp.department_name || 'N/A'}</div>
+                    <div><strong>Phone:</strong> {selectedEmp.phone || 'N/A'}</div>
+                    <div><strong>Schedule:</strong> {selectedEmp.schedule_name || 'Standard 40h'}</div>
+                    <div><strong>Bank Account:</strong> {selectedEmp.account_number ? `${selectedEmp.bank_name} (${selectedEmp.account_number})` : '⚠ Missing Bank Info'}</div>
+                  </div>
 
-                  <button
-                    onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('attendance'); }}
-                    className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
-                  >
-                    <Clock size={18} color="var(--secondary-blue)" />
-                    <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.attendance || 0} Attendance</span>
-                  </button>
+                  {/* SMART LINKS SECTION */}
+                  <div style={{ backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    <h4 style={{ fontSize: '13px', fontWeight: '700', marginBottom: '12px', color: 'var(--text-main)' }}>
+                      EMPLOYEE OPERATIONAL HUB (SMART LINKS)
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                      <button
+                        onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('contracts'); }}
+                        className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
+                      >
+                        <FileText size={18} color="var(--secondary-blue)" />
+                        <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.contracts || 0} Contracts</span>
+                      </button>
 
-                  <button
-                    onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('time-off'); }}
-                    className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
-                  >
-                    <WalletCards size={18} color="var(--secondary-blue)" />
-                    <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.time_off_requests || 0} Leave Requests</span>
-                  </button>
+                      <button
+                        onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('attendance'); }}
+                        className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
+                      >
+                        <Clock size={18} color="var(--secondary-blue)" />
+                        <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.attendance || 0} Attendance</span>
+                      </button>
 
-                  <button
-                    onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('payroll'); }}
-                    className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
-                  >
-                    <Receipt size={18} color="var(--secondary-blue)" />
-                    <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.payslips || 0} Payslips</span>
-                  </button>
+                      <button
+                        onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('time-off'); }}
+                        className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
+                      >
+                        <WalletCards size={18} color="var(--secondary-blue)" />
+                        <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.time_off_requests || 0} Leave Requests</span>
+                      </button>
+
+                      <button
+                        onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('payroll'); }}
+                        className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
+                      >
+                        <Receipt size={18} color="var(--secondary-blue)" />
+                        <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.payslips || 0} Payslips</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '380px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {/* Current & Past Contracts */}
+                  <div>
+                    <h4 style={{ fontSize: '13px', fontWeight: '700', marginBottom: '8px', color: 'var(--secondary-navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FileText size={15} /> Contract & Position History
+                    </h4>
+                    {empHistory?.contracts?.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {empHistory.contracts.map((c, i) => (
+                          <div key={c.id || i} style={{ padding: '10px', backgroundColor: 'var(--surface)', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{c.contract_ref || `Contract #${c.id}`}</span>
+                              <span className={`badge ${c.status === 'Active' ? 'badge-active' : 'badge-warning'}`}>{c.status}</span>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', color: 'var(--text-muted)' }}>
+                              <div><strong>Wage:</strong> ₹{c.wage?.toLocaleString()} / mo</div>
+                              <div><strong>Structure:</strong> {c.salary_structure_name || 'Standard'}</div>
+                              <div><strong>Start Date:</strong> {formatDate(c.start_date)}</div>
+                              <div><strong>End Date:</strong> {c.end_date ? formatDate(c.end_date) : 'Ongoing (Permanent)'}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No contract history found.</div>
+                    )}
+                  </div>
+
+                  {/* Past Payslips / Compensation History */}
+                  <div>
+                    <h4 style={{ fontSize: '13px', fontWeight: '700', marginBottom: '8px', color: 'var(--secondary-navy)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Receipt size={15} /> Past Payslips & Compensation Records
+                    </h4>
+                    {empHistory?.payslips?.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {empHistory.payslips.map((p, i) => (
+                          <div key={p.id || i} style={{ padding: '8px 10px', backgroundColor: 'var(--surface)', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <div style={{ fontWeight: '600' }}>{p.payrun_name || `Period ${formatDate(p.period_start)} - ${formatDate(p.period_end)}`}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Gross: ₹{p.gross_salary?.toLocaleString()} • Deductions: ₹{p.total_deductions?.toLocaleString()}</div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontWeight: '700', color: '#10B981' }}>Net: ₹{p.net_salary?.toLocaleString()}</div>
+                              <span className="badge badge-active" style={{ fontSize: '10px' }}>{p.status}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No past payslip records.</div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
