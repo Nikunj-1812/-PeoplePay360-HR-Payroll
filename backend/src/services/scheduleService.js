@@ -22,6 +22,7 @@ function calculateWeeklyHours(data) {
   return parseFloat(weekly.toFixed(2));
 }
 
+// Get all working schedules
 async function getSchedules() {
   return await sql`
     SELECT ws.*, (SELECT count(*)::int FROM employees e WHERE e.schedule_id = ws.id) as employee_count
@@ -30,6 +31,14 @@ async function getSchedules() {
   `;
 }
 
+// Get schedule by ID
+async function getScheduleById(id) {
+  const scheds = await sql`SELECT * FROM working_schedules WHERE id = ${id}`;
+  if (scheds.length === 0) throw new Error('Working schedule not found');
+  return scheds[0];
+}
+
+// Create working schedule
 async function createSchedule(data) {
   const weeklyHours = calculateWeeklyHours(data);
   const {
@@ -70,4 +79,51 @@ async function createSchedule(data) {
   return sched;
 }
 
-module.exports = { getSchedules, createSchedule, calculateWeeklyHours };
+// Update working schedule
+async function updateSchedule(id, data) {
+  const weeklyHours = calculateWeeklyHours(data);
+  const {
+    name, schedule_type,
+    monday_start, monday_end, monday_break,
+    tuesday_start, tuesday_end, tuesday_break,
+    wednesday_start, wednesday_end, wednesday_break,
+    thursday_start, thursday_end, thursday_break,
+    friday_start, friday_end, friday_break,
+    saturday_start, saturday_end, saturday_break,
+    sunday_start, sunday_end, sunday_break
+  } = data;
+
+  const [updated] = await sql`
+    UPDATE working_schedules SET
+      name = ${name},
+      schedule_type = ${schedule_type || 'Full Time'},
+      monday_start = ${monday_start || ''}, monday_end = ${monday_end || ''}, monday_break = ${monday_break || ''},
+      tuesday_start = ${tuesday_start || ''}, tuesday_end = ${tuesday_end || ''}, tuesday_break = ${tuesday_break || ''},
+      wednesday_start = ${wednesday_start || ''}, wednesday_end = ${wednesday_end || ''}, wednesday_break = ${wednesday_break || ''},
+      thursday_start = ${thursday_start || ''}, thursday_end = ${thursday_end || ''}, thursday_break = ${thursday_break || ''},
+      friday_start = ${friday_start || ''}, friday_end = ${friday_end || ''}, friday_break = ${friday_break || ''},
+      saturday_start = ${saturday_start || ''}, saturday_end = ${saturday_end || ''}, saturday_break = ${saturday_break || ''},
+      sunday_start = ${sunday_start || ''}, sunday_end = ${sunday_end || ''}, sunday_break = ${sunday_break || ''},
+      weekly_hours = ${weeklyHours}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return updated;
+}
+
+// Delete working schedule
+async function deleteSchedule(id) {
+  // Unassign from employees first
+  await sql`UPDATE employees SET schedule_id = NULL WHERE schedule_id = ${id}`;
+  const [deleted] = await sql`DELETE FROM working_schedules WHERE id = ${id} RETURNING *`;
+  return deleted;
+}
+
+module.exports = {
+  getSchedules,
+  getScheduleById,
+  createSchedule,
+  updateSchedule,
+  deleteSchedule,
+  calculateWeeklyHours
+};

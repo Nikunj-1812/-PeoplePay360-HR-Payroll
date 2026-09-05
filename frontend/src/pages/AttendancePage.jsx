@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { formatDate, formatTime } from '../utils/dateUtils';
 import { 
-  Clock, CheckCircle, AlertTriangle, Play, Square, Edit2, 
+  Clock, CheckCircle, AlertTriangle, Play, Square, Edit2, Trash2,
   CalendarDays, Plus, Users, Filter, Search, Check, RefreshCw
 } from 'lucide-react';
 
@@ -23,14 +24,16 @@ export default function AttendancePage() {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [correctionData, setCorrectionData] = useState({ status: 'Present', worked_hours: 8, exception_note: '' });
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleName, setScheduleName] = useState('');
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState({ name: '', schedule_type: 'Full Time', weekly_hours: 40 });
+  const [confirmConfig, setConfirmConfig] = useState(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
   const userEmpId = user?.employee_id;
 
   // Find today's attendance record for current user
   const todayRecord = userEmpId 
-    ? attendance.find(a => String(a.employee_id) === String(userEmpId) && a.date === todayStr)
+    ? attendance.find(a => String(a.employee_id) === String(userEmpId) && (formatDate(a.date) === formatDate(todayStr) || (a.date && String(a.date).startsWith(todayStr))))
     : null;
 
   const isCheckedIn = Boolean(todayRecord && todayRecord.check_in);
@@ -113,19 +116,46 @@ export default function AttendancePage() {
     }
   };
 
-  const handleCreateSchedule = async (e) => {
+  const handleSaveSchedule = async (e) => {
     e.preventDefault();
-    if (!scheduleName) return;
+    if (!scheduleForm.name) return;
     try {
-      await api.post('/schedules', { name: scheduleName, schedule_type: 'Full Time' });
+      if (editingSchedule) {
+        await api.put(`/schedules/${editingSchedule.id}`, scheduleForm);
+        toast.success('Working Schedule updated successfully.');
+      } else {
+        await api.post('/schedules', scheduleForm);
+        toast.success('Working Schedule created successfully.');
+      }
       api.invalidate(['schedules', 'attendance']);
-      toast.success('Working Schedule created successfully.');
       setShowScheduleModal(false);
-      setScheduleName('');
+      setEditingSchedule(null);
+      setScheduleForm({ name: '', schedule_type: 'Full Time', weekly_hours: 40 });
       fetchAttendance();
     } catch (err) {
-      toast.error(err.message || 'Failed to create schedule.');
+      toast.error(err.message || 'Failed to save schedule.');
     }
+  };
+
+  const handleDeleteSchedule = (s) => {
+    setConfirmConfig({
+      title: 'Delete Working Schedule',
+      description: `Are you sure you want to delete schedule "${s.name}"?`,
+      confirmText: 'Delete Schedule',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/schedules/${s.id}`);
+          api.invalidate(['schedules', 'attendance']);
+          toast.info('Working schedule deleted.');
+          fetchAttendance();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete schedule.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
   // Filtered Attendance List
@@ -341,7 +371,37 @@ export default function AttendancePage() {
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{s.schedule_type || 'Full Time'}</span>
                     </div>
                   </div>
-                  <span className="badge badge-primary">{s.weekly_hours || 40}h / Week</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="badge badge-primary">{s.weekly_hours || 40}h / Week</span>
+                    {canManageSchedules && (
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          onClick={() => {
+                            setEditingSchedule(s);
+                            setScheduleForm({
+                              name: s.name,
+                              schedule_type: s.schedule_type || 'Full Time',
+                              weekly_hours: s.weekly_hours || 40
+                            });
+                            setShowScheduleModal(true);
+                          }}
+                          className="btn btn-secondary"
+                          style={{ padding: '3px 6px' }}
+                          title="Edit Schedule"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSchedule(s)}
+                          className="btn btn-danger"
+                          style={{ padding: '3px 6px' }}
+                          title="Delete Schedule"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', textAlign: 'center', fontSize: '11px', backgroundColor: 'var(--surface)', padding: '10px', borderRadius: '6px' }}>
@@ -419,29 +479,58 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {/* Create Schedule Modal */}
+      {/* Create / Edit Schedule Modal */}
       {showScheduleModal && (
         <div className="modal-overlay" onClick={() => setShowScheduleModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
             <div className="modal-header">
-              <h3 className="modal-title">Create Working Schedule</h3>
+              <h3 className="modal-title">{editingSchedule ? 'Edit Working Schedule' : 'Create Working Schedule'}</h3>
               <button onClick={() => setShowScheduleModal(false)} className="btn btn-secondary">✕</button>
             </div>
-            <form onSubmit={handleCreateSchedule}>
+            <form onSubmit={handleSaveSchedule}>
               <div className="form-group">
                 <label className="form-label">Schedule Name</label>
-                <input type="text" required placeholder="e.g. Standard 40h Shift" className="form-input" value={scheduleName} onChange={(e) => setScheduleName(e.target.value)} />
+                <input type="text" required placeholder="e.g. Standard 40h Shift" className="form-input" value={scheduleForm.name} onChange={(e) => setScheduleForm({ ...scheduleForm, name: e.target.value })} />
               </div>
+
+              <div className="form-group">
+                <label className="form-label">Schedule Type</label>
+                <select className="form-select" value={scheduleForm.schedule_type} onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_type: e.target.value })}>
+                  <option value="Full Time">Full Time (5 Days / 40h)</option>
+                  <option value="Part Time">Part Time (20h)</option>
+                  <option value="Flexible Shift">Flexible Shift</option>
+                  <option value="Weekend Shift">Weekend Shift</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Weekly Standard Hours</label>
+                <input type="number" step="0.5" required className="form-input" value={scheduleForm.weekly_hours} onChange={(e) => setScheduleForm({ ...scheduleForm, weekly_hours: parseFloat(e.target.value) })} />
+              </div>
+
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                Note: Total weekly hours are calculated automatically from daily pattern inputs (8h/day × 5 days = 40h/week).
+                Note: Total weekly hours are calculated automatically from standard daily work patterns (8h/day × 5 days = 40h/week).
               </p>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" onClick={() => setShowScheduleModal(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Schedule</button>
+                <button type="submit" className="btn btn-primary">{editingSchedule ? 'Save Changes' : 'Save Schedule'}</button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmConfig && (
+        <ConfirmDialog
+          open={Boolean(confirmConfig)}
+          onClose={() => setConfirmConfig(null)}
+          onConfirm={confirmConfig.onConfirm}
+          title={confirmConfig.title}
+          description={confirmConfig.description}
+          confirmText={confirmConfig.confirmText}
+          variant={confirmConfig.variant || 'primary'}
+        />
       )}
     </div>
   );

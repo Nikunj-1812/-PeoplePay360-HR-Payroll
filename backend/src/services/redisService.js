@@ -191,9 +191,10 @@ async function invalidateAll() {
   memoryFallback.clear();
 }
 
-// Remove passwords, hashes, JWTs and secrets
+// Remove passwords, hashes, JWTs and secrets while preserving Dates
 function sanitizeSensitiveData(data) {
   if (!data) return data;
+  if (data instanceof Date) return data;
   if (Array.isArray(data)) {
     return data.map(item => sanitizeSensitiveData(item));
   }
@@ -205,7 +206,7 @@ function sanitizeSensitiveData(data) {
     delete copy.jwt;
     delete copy.secret;
     for (const k in copy) {
-      if (typeof copy[k] === 'object') {
+      if (typeof copy[k] === 'object' && copy[k] !== null && !(copy[k] instanceof Date)) {
         copy[k] = sanitizeSensitiveData(copy[k]);
       }
     }

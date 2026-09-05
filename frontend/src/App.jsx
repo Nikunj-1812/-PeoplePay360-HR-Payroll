@@ -13,6 +13,7 @@ import AttendancePage from './pages/AttendancePage';
 import TimeOffPage from './pages/TimeOffPage';
 import SalaryStructuresPage from './pages/SalaryStructuresPage';
 import PayrunsPage from './pages/PayrunsPage';
+import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 
 function AppContent() {
@@ -44,6 +45,8 @@ function AppContent() {
         return <PayrunsPage />;
       case 'structures':
         return <SalaryStructuresPage />;
+      case 'reports':
+        return <ReportsPage />;
       case 'settings':
         return <SettingsPage />;
       default:

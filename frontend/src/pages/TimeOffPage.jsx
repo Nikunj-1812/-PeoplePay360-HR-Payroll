@@ -3,24 +3,34 @@ import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { formatDate } from '../utils/dateUtils';
-import { WalletCards, Plus, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { WalletCards, Plus, CheckCircle, XCircle, Clock, Edit2, Trash2, Calendar, FileText } from 'lucide-react';
 
 export default function TimeOffPage() {
   const toast = useToast();
-  const [activeSubTab, setActiveSubTab] = useState('requests');
+  const [activeSubTab, setActiveSubTab] = useState('requests'); // 'requests' | 'allocations' | 'types'
   const [requests, setRequests] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [types, setTypes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState(null);
   const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Confirm dialog state
+  // Modals state
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [showAllocModal, setShowAllocModal] = useState(false);
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [selectedType, setSelectedType] = useState(null);
   const [confirmConfig, setConfirmConfig] = useState(null);
 
-  const [formData, setFormData] = useState({
+  // Forms
+  const [requestForm, setRequestForm] = useState({
     employee_id: '1', time_off_type_id: '1', start_date: '2026-09-10', end_date: '2026-09-11', duration: 2, reason: 'Personal work'
+  });
+  const [allocForm, setAllocForm] = useState({
+    employee_id: '1', time_off_type_id: '1', allocated_days: 12, validity_start: '2026-01-01', validity_end: '2026-12-31'
+  });
+  const [typeForm, setTypeForm] = useState({
+    name: '', unit: 'days', requires_allocation: true, approval_workflow: 'hr_manager'
   });
 
   const fetchData = async () => {
@@ -50,14 +60,68 @@ export default function TimeOffPage() {
   const handleCreateRequest = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/time-off/requests', formData);
+      await api.post('/time-off/requests', requestForm);
       api.invalidate(['time-off', 'dashboard']);
-      setShowModal(false);
+      setShowRequestModal(false);
       toast.success('Time Off Request submitted successfully.');
       fetchData();
     } catch (err) {
       toast.error(err.message || 'Failed to submit time off request.');
     }
+  };
+
+  const handleCreateAllocation = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/time-off/allocations', allocForm);
+      api.invalidate(['time-off', 'dashboard']);
+      setShowAllocModal(false);
+      toast.success('Leave Allocation created successfully.');
+      fetchData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to create allocation.');
+    }
+  };
+
+  const handleSaveType = async (e) => {
+    e.preventDefault();
+    try {
+      if (selectedType) {
+        await api.put(`/time-off/types/${selectedType.id}`, typeForm);
+        toast.success('Time Off Type updated.');
+      } else {
+        await api.post('/time-off/types', typeForm);
+        toast.success('Time Off Type created.');
+      }
+      api.invalidate(['time-off']);
+      setShowTypeModal(false);
+      setSelectedType(null);
+      setTypeForm({ name: '', unit: 'days', requires_allocation: true, approval_workflow: 'hr_manager' });
+      fetchData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to save time off type.');
+    }
+  };
+
+  const handleDeleteType = (t) => {
+    setConfirmConfig({
+      title: 'Delete Time Off Type',
+      description: `Are you sure you want to delete "${t.name}"? This action cannot be undone.`,
+      confirmText: 'Delete Type',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/time-off/types/${t.id}`);
+          api.invalidate(['time-off']);
+          toast.info('Time off type deleted.');
+          fetchData();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete type.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
   const handleApprove = (id) => {
@@ -111,9 +175,32 @@ export default function TimeOffPage() {
           <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Leave policies, allocations, & approval balance workflow</p>
         </div>
 
-        <button onClick={() => setShowModal(true)} className="btn btn-primary">
-          <Plus size={16} /> Request Time Off
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {activeSubTab === 'types' && (
+            <button
+              onClick={() => {
+                setSelectedType(null);
+                setTypeForm({ name: '', unit: 'days', requires_allocation: true, approval_workflow: 'hr_manager' });
+                setShowTypeModal(true);
+              }}
+              className="btn btn-primary"
+            >
+              <Plus size={16} /> New Leave Type
+            </button>
+          )}
+
+          {activeSubTab === 'allocations' && (
+            <button onClick={() => setShowAllocModal(true)} className="btn btn-primary">
+              <Plus size={16} /> Grant Allocation
+            </button>
+          )}
+
+          {activeSubTab === 'requests' && (
+            <button onClick={() => setShowRequestModal(true)} className="btn btn-primary">
+              <Plus size={16} /> Request Time Off
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sub Tabs */}
@@ -222,8 +309,35 @@ export default function TimeOffPage() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
           {types.map(t => (
-            <div key={t.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700' }}>{t.name}</h3>
+            <div key={t.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: '700' }}>{t.name}</h3>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    onClick={() => {
+                      setSelectedType(t);
+                      setTypeForm({
+                        name: t.name,
+                        unit: t.unit || 'days',
+                        requires_allocation: t.requires_allocation,
+                        approval_workflow: t.approval_workflow || 'hr_manager'
+                      });
+                      setShowTypeModal(true);
+                    }}
+                    className="btn btn-secondary"
+                    style={{ padding: '4px 6px' }}
+                  >
+                    <Edit2 size={13} />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteType(t)}
+                    className="btn btn-danger"
+                    style={{ padding: '4px 6px' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Unit: <strong>{t.unit}</strong></div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Requires Allocation: <strong>{t.requires_allocation ? 'Yes' : 'No'}</strong></div>
               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Approval Workflow: <strong>{t.approval_workflow}</strong></div>
@@ -268,17 +382,17 @@ export default function TimeOffPage() {
       )}
 
       {/* New Request Modal */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+      {showRequestModal && (
+        <div className="modal-overlay" onClick={() => setShowRequestModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">Request Time Off</h3>
-              <button onClick={() => setShowModal(false)} className="btn btn-secondary">✕</button>
+              <button onClick={() => setShowRequestModal(false)} className="btn btn-secondary">✕</button>
             </div>
             <form onSubmit={handleCreateRequest}>
               <div className="form-group">
                 <label className="form-label">Employee</label>
-                <select className="form-select" value={formData.employee_id} onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}>
+                <select className="form-select" value={requestForm.employee_id} onChange={(e) => setRequestForm({ ...requestForm, employee_id: e.target.value })}>
                   {employees.map(emp => (
                     <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
                   ))}
@@ -287,7 +401,7 @@ export default function TimeOffPage() {
 
               <div className="form-group">
                 <label className="form-label">Time Off Type</label>
-                <select className="form-select" value={formData.time_off_type_id} onChange={(e) => setFormData({ ...formData, time_off_type_id: e.target.value })}>
+                <select className="form-select" value={requestForm.time_off_type_id} onChange={(e) => setRequestForm({ ...requestForm, time_off_type_id: e.target.value })}>
                   {types.map(t => (
                     <option key={t.id} value={t.id}>{t.name} ({t.unit})</option>
                   ))}
@@ -297,27 +411,129 @@ export default function TimeOffPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="form-group">
                   <label className="form-label">Start Date</label>
-                  <input type="date" required className="form-input" value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} />
+                  <input type="date" required className="form-input" value={requestForm.start_date} onChange={(e) => setRequestForm({ ...requestForm, start_date: e.target.value })} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">End Date</label>
-                  <input type="date" required className="form-input" value={formData.end_date} onChange={(e) => setFormData({ ...formData, end_date: e.target.value })} />
+                  <input type="date" required className="form-input" value={requestForm.end_date} onChange={(e) => setRequestForm({ ...requestForm, end_date: e.target.value })} />
                 </div>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Duration (Days / Hours)</label>
-                <input type="number" step="0.5" required className="form-input" value={formData.duration} onChange={(e) => setFormData({ ...formData, duration: parseFloat(e.target.value) })} />
+                <input type="number" step="0.5" required className="form-input" value={requestForm.duration} onChange={(e) => setRequestForm({ ...requestForm, duration: parseFloat(e.target.value) })} />
               </div>
 
               <div className="form-group">
                 <label className="form-label">Reason</label>
-                <textarea className="form-textarea" rows={2} value={formData.reason} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} />
+                <textarea className="form-textarea" rows={2} value={requestForm.reason} onChange={(e) => setRequestForm({ ...requestForm, reason: e.target.value })} />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
-                <button type="button" onClick={() => setShowModal(false)} className="btn btn-secondary">Cancel</button>
+                <button type="button" onClick={() => setShowRequestModal(false)} className="btn btn-secondary">Cancel</button>
                 <button type="submit" className="btn btn-primary">Submit Request</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Grant Allocation Modal */}
+      {showAllocModal && (
+        <div className="modal-overlay" onClick={() => setShowAllocModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Grant Leave Allocation</h3>
+              <button onClick={() => setShowAllocModal(false)} className="btn btn-secondary">✕</button>
+            </div>
+            <form onSubmit={handleCreateAllocation}>
+              <div className="form-group">
+                <label className="form-label">Employee</label>
+                <select className="form-select" value={allocForm.employee_id} onChange={(e) => setAllocForm({ ...allocForm, employee_id: e.target.value })}>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Time Off Type</label>
+                <select className="form-select" value={allocForm.time_off_type_id} onChange={(e) => setAllocForm({ ...allocForm, time_off_type_id: e.target.value })}>
+                  {types.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.unit})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Allocated Days / Hours</label>
+                <input type="number" step="0.5" required className="form-input" value={allocForm.allocated_days} onChange={(e) => setAllocForm({ ...allocForm, allocated_days: parseFloat(e.target.value) })} />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Validity Start Date</label>
+                  <input type="date" required className="form-input" value={allocForm.validity_start} onChange={(e) => setAllocForm({ ...allocForm, validity_start: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Validity End Date</label>
+                  <input type="date" required className="form-input" value={allocForm.validity_end} onChange={(e) => setAllocForm({ ...allocForm, validity_end: e.target.value })} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+                <button type="button" onClick={() => setShowAllocModal(false)} className="btn btn-secondary">Cancel</button>
+                <button type="submit" className="btn btn-primary">Grant Allocation</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create / Edit Time Off Type Modal */}
+      {showTypeModal && (
+        <div className="modal-overlay" onClick={() => setShowTypeModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">{selectedType ? 'Edit Time Off Type' : 'New Time Off Type'}</h3>
+              <button onClick={() => setShowTypeModal(false)} className="btn btn-secondary">✕</button>
+            </div>
+            <form onSubmit={handleSaveType}>
+              <div className="form-group">
+                <label className="form-label">Type Name</label>
+                <input type="text" required placeholder="e.g. Annual Vacation" className="form-input" value={typeForm.name} onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })} />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Unit of Measure</label>
+                <select className="form-select" value={typeForm.unit} onChange={(e) => setTypeForm({ ...typeForm, unit: e.target.value })}>
+                  <option value="days">Days</option>
+                  <option value="hours">Hours</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                <input
+                  type="checkbox"
+                  id="req_alloc"
+                  checked={typeForm.requires_allocation}
+                  onChange={(e) => setTypeForm({ ...typeForm, requires_allocation: e.target.checked })}
+                />
+                <label htmlFor="req_alloc" style={{ fontSize: '13px', cursor: 'pointer' }}>Requires Prior Allocation / Balance</label>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Approval Workflow</label>
+                <select className="form-select" value={typeForm.approval_workflow} onChange={(e) => setTypeForm({ ...typeForm, approval_workflow: e.target.value })}>
+                  <option value="hr_manager">HR Manager Approval</option>
+                  <option value="manager_then_hr">Direct Manager then HR</option>
+                  <option value="auto_approved">Auto-Approved</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+                <button type="button" onClick={() => setShowTypeModal(false)} className="btn btn-secondary">Cancel</button>
+                <button type="submit" className="btn btn-primary">{selectedType ? 'Save Changes' : 'Create Type'}</button>
               </div>
             </form>
           </div>
