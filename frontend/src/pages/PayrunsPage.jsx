@@ -5,7 +5,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { formatDate } from '../utils/dateUtils';
 import { 
   Receipt, Plus, Calculator, CheckCircle2, DollarSign, Mail, 
-  AlertTriangle, FileText, ArrowRight, UserCheck, Download
+  AlertTriangle, FileText, ArrowRight, UserCheck, Download, Trash2
 } from 'lucide-react';
 
 export default function PayrunsPage() {
@@ -19,6 +19,31 @@ export default function PayrunsPage() {
 
   // Confirm dialog state
   const [confirmConfig, setConfirmConfig] = useState(null);
+
+  const handleDeletePayrun = (prId, name, e) => {
+    if (e) e.stopPropagation();
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Payroll Batch',
+      message: `Are you sure you want to delete payrun "${name}"? This will delete all generated payslips and lines.`,
+      confirmText: 'Delete Payrun',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/payruns/${prId}`);
+          api.invalidate(['payruns', 'dashboard']);
+          toast.info(`Payrun "${name}" deleted.`);
+          if (selectedPayrun?.id === prId) setSelectedPayrun(null);
+          fetchPayruns();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete payrun.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      },
+      onCancel: () => setConfirmConfig(null)
+    });
+  };
 
   // Wizard Step 1 & 2 state
   const [structures, setStructures] = useState([]);
@@ -192,7 +217,17 @@ export default function PayrunsPage() {
                   backgroundColor: selectedPayrun?.id === pr.id ? 'rgba(179, 207, 229, 0.1)' : 'var(--card-bg)'
                 }}
               >
-                <div style={{ fontWeight: '700', fontSize: '15px' }}>{pr.name}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: '700', fontSize: '15px' }}>{pr.name}</div>
+                  <button
+                    onClick={(e) => handleDeletePayrun(pr.id, pr.name, e)}
+                    className="btn btn-secondary"
+                    title="Delete Payrun"
+                    style={{ padding: '3px 6px', color: 'var(--danger)' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                   {formatDate(pr.period_start)} to {formatDate(pr.period_end)}
                 </div>

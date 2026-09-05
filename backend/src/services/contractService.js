@@ -1,6 +1,7 @@
 const { sql } = require('../db');
 
 async function getContracts(employeeId = null) {
+  const cleanEmpId = employeeId && !isNaN(employeeId) ? parseInt(employeeId, 10) : null;
   return await sql`
     SELECT 
       c.*,
@@ -12,7 +13,7 @@ async function getContracts(employeeId = null) {
     JOIN employees e ON c.employee_id = e.id
     LEFT JOIN departments d ON c.department_id = d.id
     LEFT JOIN salary_structures ss ON c.salary_structure_id = ss.id
-    WHERE (${employeeId ? parseInt(employeeId, 10) : null}::int IS NULL OR c.employee_id = ${employeeId ? parseInt(employeeId, 10) : null})
+    WHERE (${cleanEmpId}::int IS NULL OR c.employee_id = ${cleanEmpId})
     ORDER BY c.id DESC
   `;
 }
@@ -63,4 +64,10 @@ async function updateContract(id, data) {
   return updated;
 }
 
-module.exports = { getContracts, findApplicableContract, createContract, updateContract };
+async function deleteContract(id) {
+  const cleanId = parseInt(id, 10);
+  const [deleted] = await sql`DELETE FROM contracts WHERE id = ${cleanId} RETURNING *`;
+  return deleted;
+}
+
+module.exports = { getContracts, findApplicableContract, createContract, updateContract, deleteContract };

@@ -26,7 +26,7 @@ export default function SalaryStructuresPage() {
     name: '', code: '', category: 'allowance', sequence: 25, computation_type: 'percentage', amount: 0, percentage: 10, percentage_based_on: 'BASIC', formula_expression: ''
   });
 
-  const canManage = ['hr_payroll_manager', 'admin'].includes(user?.role || '');
+  const canManage = ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'].includes(user?.role || '');
 
   const fetchStructures = async (selectId = null) => {
     try {
@@ -259,7 +259,6 @@ export default function SalaryStructuresPage() {
                       <th>Rule Name</th>
                       <th>Category</th>
                       <th>Computation Type</th>
-                      <th>Value / Formula</th>
                       <th>Status</th>
                       {canManage && <th>Actions</th>}
                     </tr>
@@ -276,9 +275,6 @@ export default function SalaryStructuresPage() {
                           </span>
                         </td>
                         <td style={{ textTransform: 'capitalize' }}>{r.computation_type}</td>
-                        <td style={{ fontFamily: 'monospace', fontWeight: '600', fontSize: '12px' }}>
-                          {r.computation_type === 'percentage' ? `${r.percentage}% of ${r.percentage_based_on}` : r.computation_type === 'fixed' ? `₹ ${r.amount}` : r.formula_expression}
-                        </td>
                         <td><span className="badge badge-active">Active</span></td>
                         {canManage && (
                           <td onClick={(e) => e.stopPropagation()}>
@@ -365,9 +361,6 @@ export default function SalaryStructuresPage() {
                 <div style={{ gridColumn: 'span 2' }}><strong>Rule Name:</strong> {selectedRuleDetail.name}</div>
                 <div><strong>Category:</strong> {selectedRuleDetail.category}</div>
                 <div><strong>Computation Type:</strong> {selectedRuleDetail.computation_type}</div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <strong>Formula / Value:</strong> {selectedRuleDetail.computation_type === 'percentage' ? `${selectedRuleDetail.percentage}% of ${selectedRuleDetail.percentage_based_on}` : selectedRuleDetail.computation_type === 'fixed' ? `₹ ${selectedRuleDetail.amount}` : selectedRuleDetail.formula_expression}
-                </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button onClick={() => setSelectedRuleDetail(null)} className="btn btn-secondary">Close</button>
@@ -459,13 +452,13 @@ export default function SalaryStructuresPage() {
       {/* Confirmation Modal */}
       {confirmConfig && (
         <ConfirmDialog
-          open={Boolean(confirmConfig)}
-          onClose={() => setConfirmConfig(null)}
+          isOpen={Boolean(confirmConfig)}
+          onCancel={() => setConfirmConfig(null)}
           onConfirm={confirmConfig.onConfirm}
           title={confirmConfig.title}
-          description={confirmConfig.description}
+          message={confirmConfig.description || confirmConfig.message}
           confirmText={confirmConfig.confirmText}
-          variant={confirmConfig.variant || 'primary'}
+          confirmVariant={confirmConfig.variant || 'primary'}
         />
       )}
     </div>

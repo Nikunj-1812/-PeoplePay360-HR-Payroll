@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/dateUtils';
-import { Search, Plus, LayoutGrid, List, User, Mail, Phone, Building2, Briefcase, FileText, Clock, WalletCards, Receipt, History, Award } from 'lucide-react';
+import { Search, Plus, LayoutGrid, List, User, Mail, Phone, Building2, Briefcase, FileText, Clock, WalletCards, Receipt, History, Award, Trash2, Edit2, ShieldCheck } from 'lucide-react';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 export default function EmployeesPage({ onNavigateTab }) {
   const toast = useToast();
@@ -14,11 +15,12 @@ export default function EmployeesPage({ onNavigateTab }) {
   const [empHistory, setEmpHistory] = useState(null);
   const [modalTab, setModalTab] = useState('overview'); // 'overview' | 'history'
   const [showFormModal, setShowFormModal] = useState(false);
+  const [deleteConfig, setDeleteConfig] = useState(null);
 
   // Form State
   const [formData, setFormData] = useState({
-    emp_id: '', first_name: '', last_name: '', email: '', phone: '',
-    job_position: '', department_id: '1', bank_name: '', account_number: '', ifsc_code: ''
+    id: null, emp_id: '', first_name: '', last_name: '', email: '', phone: '',
+    job_position: 'Employee', role: 'employee', department_id: '1', bank_name: '', account_number: '', ifsc_code: ''
   });
 
   const fetchEmployees = async () => {
@@ -31,6 +33,50 @@ export default function EmployeesPage({ onNavigateTab }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEditEmployee = (emp, e) => {
+    if (e) e.stopPropagation();
+    setFormData({
+      id: emp.id,
+      emp_id: emp.emp_id || '',
+      first_name: emp.first_name || '',
+      last_name: emp.last_name || '',
+      email: emp.email || '',
+      phone: emp.phone || '',
+      job_position: emp.job_position || 'Employee',
+      role: emp.role || 'employee',
+      department_id: emp.department_id ? String(emp.department_id) : '1',
+      bank_name: emp.bank_name || '',
+      account_number: emp.account_number || '',
+      ifsc_code: emp.ifsc_code || ''
+    });
+    setShowFormModal(true);
+  };
+
+  const handleDeleteEmployee = (emp, e) => {
+    if (e) e.stopPropagation();
+    setDeleteConfig({
+      isOpen: true,
+      title: 'Delete Employee Record',
+      message: `Are you sure you want to delete employee "${emp.first_name} ${emp.last_name}" (${emp.emp_id})? This will delete associated contracts, user account, and records.`,
+      confirmText: 'Delete Employee',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/employees/${emp.id}`);
+          api.invalidate(['employees', 'users', 'dashboard']);
+          toast.info(`Employee "${emp.first_name} ${emp.last_name}" deleted.`);
+          if (selectedEmp?.id === emp.id) setSelectedEmp(null);
+          fetchEmployees();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete employee.');
+        } finally {
+          setDeleteConfig(null);
+        }
+      },
+      onCancel: () => setDeleteConfig(null)
+    });
   };
 
   useEffect(() => {
@@ -56,17 +102,41 @@ export default function EmployeesPage({ onNavigateTab }) {
     try {
       if (formData.id) {
         await api.put(`/employees/${formData.id}`, formData);
-        toast.success('Employee updated successfully.');
+        toast.success('Employee profile and User role updated live.');
       } else {
         await api.post('/employees', formData);
-        toast.success('Employee created successfully.');
+        toast.success('Employee created and User account synced live.');
       }
-      api.invalidate(['employees', 'dashboard']);
+      api.invalidate(['employees', 'users', 'dashboard']);
       setShowFormModal(false);
       fetchEmployees();
     } catch (err) {
       toast.error(err.message || 'Failed to save employee.');
     }
+  };
+
+  // Sync Job Position & System Role
+  const handlePositionChange = (pos) => {
+    let newRole = formData.role;
+    const lowerPos = pos.toLowerCase();
+    if (lowerPos === 'admin') newRole = 'admin';
+    else if (lowerPos === 'hr payroll manager') newRole = 'hr_payroll_manager';
+    else if (lowerPos === 'hr payroll user') newRole = 'hr_payroll_user';
+    else if (lowerPos === 'hr manager') newRole = 'hr_manager';
+    else if (lowerPos === 'employee') newRole = 'employee';
+    setFormData({ ...formData, job_position: pos, role: newRole });
+  };
+
+  const handleRoleChange = (r) => {
+    const roleTitles = {
+      'admin': 'Admin',
+      'hr_payroll_manager': 'HR Payroll Manager',
+      'hr_payroll_user': 'HR Payroll User',
+      'hr_manager': 'HR Manager',
+      'employee': 'Employee'
+    };
+    const matchingTitle = roleTitles[r] || formData.job_position;
+    setFormData({ ...formData, role: r, job_position: matchingTitle });
   };
 
   return (
@@ -100,9 +170,10 @@ export default function EmployeesPage({ onNavigateTab }) {
           <button
             onClick={() => {
               setFormData({
+                id: null,
                 emp_id: `EMP00${employees.length + 1}`,
                 first_name: '', last_name: '', email: '', phone: '',
-                job_position: '', department_id: '1', bank_name: '', account_number: '', ifsc_code: ''
+                job_position: 'Employee', role: 'employee', department_id: '1', bank_name: '', account_number: '', ifsc_code: ''
               });
               setShowFormModal(true);
             }}
@@ -142,7 +213,7 @@ export default function EmployeesPage({ onNavigateTab }) {
                 }}>
                   {emp.first_name[0]}{emp.last_name[0]}
                 </div>
-                <div>
+                <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: '700', fontSize: '15px', color: 'var(--text-main)' }}>{emp.first_name} {emp.last_name}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{emp.emp_id} • {emp.job_position}</div>
                 </div>
@@ -155,11 +226,31 @@ export default function EmployeesPage({ onNavigateTab }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Mail size={14} color="var(--secondary-blue)" /> {emp.email}
                 </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <ShieldCheck size={14} color="var(--secondary-blue)" /> Role: <span className="badge badge-primary" style={{ fontSize: '10px' }}>{(emp.role || 'employee').replace(/_/g, ' ').toUpperCase()}</span>
+                </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
                 <span className={`badge ${emp.status === 'Active' ? 'badge-active' : 'badge-danger'}`}>{emp.status}</span>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>View Smart Links ➔</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    onClick={(e) => handleEditEmployee(emp, e)}
+                    className="btn btn-secondary"
+                    title="Edit Employee & Role"
+                    style={{ padding: '4px 6px' }}
+                  >
+                    <Edit2 size={13} />
+                  </button>
+                  <button 
+                    onClick={(e) => handleDeleteEmployee(emp, e)} 
+                    className="btn btn-secondary" 
+                    title="Delete Employee" 
+                    style={{ padding: '4px 6px', color: 'var(--danger)' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -173,6 +264,7 @@ export default function EmployeesPage({ onNavigateTab }) {
                 <th>Employee Name</th>
                 <th>Department</th>
                 <th>Job Position</th>
+                <th>System Role</th>
                 <th>Email</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -185,11 +277,32 @@ export default function EmployeesPage({ onNavigateTab }) {
                   <td>{emp.first_name} {emp.last_name}</td>
                   <td>{emp.department_name || 'General'}</td>
                   <td>{emp.job_position}</td>
+                  <td>
+                    <span className="badge badge-primary" style={{ fontSize: '11px' }}>
+                      {(emp.role || 'employee').replace(/_/g, ' ').toUpperCase()}
+                    </span>
+                  </td>
                   <td>{emp.email}</td>
                   <td><span className={`badge ${emp.status === 'Active' ? 'badge-active' : 'badge-danger'}`}>{emp.status}</span></td>
-                  <td>
+                  <td style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                     <button onClick={() => handleOpenDetail(emp.id)} className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '12px' }}>
-                      View Operational Hub
+                      Hub
+                    </button>
+                    <button
+                      onClick={(e) => handleEditEmployee(emp, e)}
+                      className="btn btn-secondary"
+                      title="Edit Employee & Role"
+                      style={{ padding: '4px 8px', fontSize: '12px' }}
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button 
+                      onClick={(e) => handleDeleteEmployee(emp, e)} 
+                      className="btn btn-secondary" 
+                      title="Delete Employee"
+                      style={{ padding: '4px 8px', color: 'var(--danger)' }}
+                    >
+                      <Trash2 size={13} />
                     </button>
                   </td>
                 </tr>
@@ -213,7 +326,9 @@ export default function EmployeesPage({ onNavigateTab }) {
                 </div>
                 <div>
                   <h3 className="modal-title">{selectedEmp.first_name} {selectedEmp.last_name}</h3>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{selectedEmp.emp_id} • {selectedEmp.job_position}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    {selectedEmp.emp_id} • {selectedEmp.job_position} • Role: <strong style={{ color: 'var(--secondary-navy)' }}>{(selectedEmp.role || 'employee').replace(/_/g, ' ').toUpperCase()}</strong>
+                  </div>
                 </div>
               </div>
               <button onClick={() => setSelectedEmp(null)} className="btn btn-secondary">✕</button>
@@ -352,9 +467,9 @@ export default function EmployeesPage({ onNavigateTab }) {
       {/* Add / Edit Form Modal */}
       {showFormModal && (
         <div className="modal-overlay" onClick={() => setShowFormModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '580px' }}>
             <div className="modal-header">
-              <h3 className="modal-title">{formData.id ? 'Edit Employee' : 'Add New Employee'}</h3>
+              <h3 className="modal-title">{formData.id ? 'Edit Employee & System Role' : 'Add New Employee'}</h3>
               <button onClick={() => setShowFormModal(false)} className="btn btn-secondary">✕</button>
             </div>
             <form onSubmit={handleSaveEmployee}>
@@ -363,30 +478,66 @@ export default function EmployeesPage({ onNavigateTab }) {
                   <label className="form-label">Employee ID</label>
                   <input type="text" required className="form-input" value={formData.emp_id} onChange={(e) => setFormData({ ...formData, emp_id: e.target.value })} />
                 </div>
+
                 <div className="form-group">
-                  <label className="form-label">Job Position</label>
-                  <input type="text" required className="form-input" value={formData.job_position} onChange={(e) => setFormData({ ...formData, job_position: e.target.value })} />
+                  <label className="form-label">Job Position (Dropdown)</label>
+                  <select
+                    className="form-select"
+                    value={formData.job_position}
+                    onChange={(e) => handlePositionChange(e.target.value)}
+                  >
+                    <option value="Employee">Employee</option>
+                    <option value="HR Manager">HR Manager</option>
+                    <option value="HR Payroll User">HR Payroll User</option>
+                    <option value="HR Payroll Manager">HR Payroll Manager</option>
+                    <option value="Admin">Admin</option>
+                    <option value="Software Engineer">Software Engineer</option>
+                    <option value="Financial Analyst">Financial Analyst</option>
+                    <option value="Operations Executive">Operations Executive</option>
+                  </select>
                 </div>
+
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Assigned System Role (5-Tier RBAC)</label>
+                  <select
+                    className="form-select"
+                    value={formData.role}
+                    onChange={(e) => handleRoleChange(e.target.value)}
+                    style={{ fontWeight: '600', color: 'var(--secondary-navy)' }}
+                  >
+                    <option value="employee">1. Employee (Staff Portal Access Only)</option>
+                    <option value="hr_manager">2. HR Manager (Employees, Attendance, Time Off, Schedules)</option>
+                    <option value="hr_payroll_user">3. HR Payroll User (HR + Payruns & Payslips Standard)</option>
+                    <option value="hr_payroll_manager">4. HR Payroll Manager (HR + Payroll + Salary Structures & Rules)</option>
+                    <option value="admin">5. Admin (Full System Access & User Administration)</option>
+                  </select>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">First Name</label>
                   <input type="text" required className="form-input" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} />
                 </div>
+
                 <div className="form-group">
                   <label className="form-label">Last Name</label>
                   <input type="text" required className="form-input" value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} />
                 </div>
+
                 <div className="form-group">
-                  <label className="form-label">Email Address</label>
+                  <label className="form-label">Email Address (Login Username)</label>
                   <input type="email" required className="form-input" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
                 </div>
+
                 <div className="form-group">
                   <label className="form-label">Phone Number</label>
                   <input type="text" className="form-input" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
                 </div>
+
                 <div className="form-group">
                   <label className="form-label">Bank Name</label>
                   <input type="text" className="form-input" placeholder="e.g. HDFC Bank" value={formData.bank_name} onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })} />
                 </div>
+
                 <div className="form-group">
                   <label className="form-label">Account Number</label>
                   <input type="text" className="form-input" placeholder="e.g. 50100..." value={formData.account_number} onChange={(e) => setFormData({ ...formData, account_number: e.target.value })} />
@@ -395,12 +546,15 @@ export default function EmployeesPage({ onNavigateTab }) {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
                 <button type="button" onClick={() => setShowFormModal(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Employee</button>
+                <button type="submit" className="btn btn-primary">Save Employee & Sync Role</button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog {...deleteConfig} />
     </div>
   );
 }

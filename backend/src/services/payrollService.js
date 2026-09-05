@@ -2,6 +2,7 @@ const { sql } = require('../db');
 const { findApplicableContract } = require('./contractService');
 
 async function getEligibleEmployees(salaryStructureId, periodStart, periodEnd) {
+  const cleanStructId = salaryStructureId && !isNaN(salaryStructureId) ? parseInt(salaryStructureId, 10) : null;
   // Find employees who have active contracts covering period
   const employees = await sql`
     SELECT DISTINCT
@@ -14,7 +15,7 @@ async function getEligibleEmployees(salaryStructureId, periodStart, periodEnd) {
     WHERE c.status = 'Active'
       AND c.start_date <= ${periodEnd}
       AND (c.end_date IS NULL OR c.end_date >= ${periodStart})
-      AND (${salaryStructureId ? sql`c.salary_structure_id = ${salaryStructureId}` : sql`1=1`})
+      AND (${cleanStructId}::int IS NULL OR c.salary_structure_id = ${cleanStructId})
     ORDER BY e.id ASC
   `;
   return employees;
@@ -239,4 +240,12 @@ async function updatePayrunStatus(payrunId, status) {
   return updated;
 }
 
-module.exports = { getEligibleEmployees, getPayruns, getPayrunById, createPayrun, computePayrun, validatePayrun, updatePayrunStatus };
+async function deletePayrun(id) {
+  const cleanId = parseInt(id, 10);
+  await sql`DELETE FROM payslip_lines WHERE payslip_id IN (SELECT id FROM payslips WHERE payrun_id = ${cleanId})`;
+  await sql`DELETE FROM payslips WHERE payrun_id = ${cleanId}`;
+  const [deleted] = await sql`DELETE FROM payruns WHERE id = ${cleanId} RETURNING *`;
+  return deleted;
+}
+
+module.exports = { getEligibleEmployees, getPayruns, getPayrunById, createPayrun, computePayrun, validatePayrun, updatePayrunStatus, deletePayrun };

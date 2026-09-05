@@ -182,7 +182,6 @@ export default function ReportsPage() {
                       <th>Email</th>
                       <th>Department</th>
                       <th>Position</th>
-                      <th>Manager</th>
                       <th>Joining Date</th>
                       <th>Status</th>
                       <th>Action</th>
@@ -264,7 +263,6 @@ export default function ReportsPage() {
                         <td>{row.email}</td>
                         <td>{row.department_name || '-'}</td>
                         <td>{row.job_position}</td>
-                        <td>{row.manager_name || '-'}</td>
                         <td>{formatDate(row.joining_date)}</td>
                         <td><span className={`badge badge-${row.status === 'Active' ? 'success' : 'neutral'}`}>{row.status}</span></td>
                         <td><button onClick={() => setSelectedRecord(row)} className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }}>View</button></td>

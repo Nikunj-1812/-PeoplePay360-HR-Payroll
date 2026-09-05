@@ -158,6 +158,31 @@ export default function AttendancePage() {
     });
   };
 
+  const handleDeleteAttendance = (att, e) => {
+    if (e) e.stopPropagation();
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Attendance Record',
+      description: `Are you sure you want to delete attendance record for ${att.employee_name} (${formatDate(att.date)})?`,
+      confirmText: 'Delete Record',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/attendance/${att.id}`);
+          api.invalidate(['attendance', 'dashboard']);
+          toast.info('Attendance record deleted.');
+          if (selectedRecord?.id === att.id) setSelectedRecord(null);
+          fetchAttendance();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete attendance record.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      },
+      onCancel: () => setConfirmConfig(null)
+    });
+  };
+
   // Filtered Attendance List
   const filteredAttendance = attendance.filter(a => {
     const matchesSearch = !search || 
@@ -331,7 +356,7 @@ export default function AttendancePage() {
                             {isException ? <AlertTriangle size={12} /> : <CheckCircle size={12} />} {a.status}
                           </span>
                         </td>
-                        <td onClick={(e) => e.stopPropagation()}>
+                        <td onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <button
                             onClick={() => {
                               setSelectedRecord(a);
@@ -346,6 +371,16 @@ export default function AttendancePage() {
                           >
                             <Edit2 size={13} /> View / Edit
                           </button>
+                          {['hr_manager', 'admin'].includes(user?.role || 'admin') && (
+                            <button
+                              onClick={(e) => handleDeleteAttendance(a, e)}
+                              className="btn btn-secondary"
+                              title="Delete Record"
+                              style={{ padding: '4px 8px', color: 'var(--danger)' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

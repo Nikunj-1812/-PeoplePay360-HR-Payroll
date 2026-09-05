@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
-import { Settings, Shield, User, Database, Server, Plus, Search, Edit2, Key, Trash2, CheckCircle, UserCheck } from 'lucide-react';
+import { Settings, User, Plus, Search, Edit2, Key, Trash2, CheckCircle, UserCheck } from 'lucide-react';
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -137,32 +137,7 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {/* System Status Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Database size={24} color="var(--secondary-blue)" />
-          <div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>DATABASE ENGINE</div>
-            <div style={{ fontSize: '15px', fontWeight: '700' }}>Neon PostgreSQL</div>
-          </div>
-        </div>
 
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Server size={24} color="#10B981" />
-          <div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>BACKEND SERVICE</div>
-            <div style={{ fontSize: '15px', fontWeight: '700' }}>Express Node.js</div>
-          </div>
-        </div>
-
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Shield size={24} color="var(--primary-text)" />
-          <div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>SECURITY ENGINE</div>
-            <div style={{ fontSize: '15px', fontWeight: '700' }}>JWT + 5-Tier RBAC</div>
-          </div>
-        </div>
-      </div>
 
       {/* Filter / Search Bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

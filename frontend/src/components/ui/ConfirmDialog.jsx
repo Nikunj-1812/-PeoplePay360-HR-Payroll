@@ -3,23 +3,32 @@ import { AlertTriangle, Info } from 'lucide-react';
 
 export default function ConfirmDialog({
   isOpen,
+  open,
   title,
   message,
+  description,
   confirmText = 'Confirm',
   cancelText = 'Cancel',
-  confirmVariant = 'primary', // 'primary' | 'danger'
+  confirmVariant,
+  variant,
   loading = false,
   onConfirm,
-  onCancel
+  onCancel,
+  onClose
 }) {
-  if (!isOpen) return null;
+  const visible = isOpen ?? open ?? false;
+  const handleCancel = onCancel || onClose || (() => {});
+  const bodyText = message || description || '';
+  const finalVariant = confirmVariant || variant || 'primary';
+
+  if (!visible) return null;
 
   return (
-    <div className="modal-overlay" onClick={loading ? undefined : onCancel}>
+    <div className="modal-overlay" onClick={loading ? undefined : handleCancel}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {confirmVariant === 'danger' ? (
+            {finalVariant === 'danger' ? (
               <AlertTriangle size={20} color="var(--danger)" />
             ) : (
               <Info size={20} color="var(--secondary-blue)" />
@@ -27,19 +36,19 @@ export default function ConfirmDialog({
             <h3 className="modal-title">{title}</h3>
           </div>
           {!loading && (
-            <button onClick={onCancel} className="btn btn-secondary" style={{ padding: '4px 8px' }}>✕</button>
+            <button onClick={handleCancel} className="btn btn-secondary" style={{ padding: '4px 8px' }}>✕</button>
           )}
         </div>
 
         <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '24px', lineHeight: '1.5' }}>
-          {message}
+          {bodyText}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
           <button
             type="button"
             disabled={loading}
-            onClick={onCancel}
+            onClick={handleCancel}
             className="btn btn-secondary"
             style={{ padding: '8px 16px', fontSize: '13px' }}
           >
@@ -49,7 +58,7 @@ export default function ConfirmDialog({
             type="button"
             disabled={loading}
             onClick={onConfirm}
-            className={`btn ${confirmVariant === 'danger' ? 'btn-danger' : 'btn-primary'}`}
+            className={`btn ${finalVariant === 'danger' ? 'btn-danger' : 'btn-primary'}`}
             style={{ padding: '8px 18px', fontSize: '13px', fontWeight: '600' }}
           >
             {loading ? 'Processing...' : confirmText}

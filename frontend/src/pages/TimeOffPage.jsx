@@ -3,9 +3,11 @@ import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { formatDate } from '../utils/dateUtils';
+import { useAuth } from '../context/AuthContext';
 import { WalletCards, Plus, CheckCircle, XCircle, Clock, Edit2, Trash2, Calendar, FileText } from 'lucide-react';
 
 export default function TimeOffPage() {
+  const { user } = useAuth();
   const toast = useToast();
   const [activeSubTab, setActiveSubTab] = useState('requests'); // 'requests' | 'allocations' | 'types'
   const [requests, setRequests] = useState([]);
@@ -24,7 +26,7 @@ export default function TimeOffPage() {
 
   // Forms
   const [requestForm, setRequestForm] = useState({
-    employee_id: '1', time_off_type_id: '1', start_date: '2026-09-10', end_date: '2026-09-11', duration: 2, reason: 'Personal work'
+    employee_id: user?.employee_id || '1', time_off_type_id: '1', start_date: '2026-09-10', end_date: '2026-09-11', duration: 2, reason: 'Personal work'
   });
   const [allocForm, setAllocForm] = useState({
     employee_id: '1', time_off_type_id: '1', allocated_days: 12, validity_start: '2026-01-01', validity_end: '2026-12-31'
@@ -145,6 +147,55 @@ export default function TimeOffPage() {
     });
   };
 
+  const handleDeleteRequest = (reqId, e) => {
+    if (e) e.stopPropagation();
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Leave Request',
+      message: 'Are you sure you want to delete this leave request? This action cannot be undone.',
+      confirmText: 'Delete Request',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/time-off/requests/${reqId}`);
+          api.invalidate(['time-off', 'dashboard']);
+          toast.info('Leave request deleted.');
+          if (selectedRequest?.id === reqId) setSelectedRequest(null);
+          fetchData();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete request.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      },
+      onCancel: () => setConfirmConfig(null)
+    });
+  };
+
+  const handleDeleteAllocation = (allocId, e) => {
+    if (e) e.stopPropagation();
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Delete Leave Allocation',
+      message: 'Are you sure you want to delete this leave allocation? This action cannot be undone.',
+      confirmText: 'Delete Allocation',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/time-off/allocations/${allocId}`);
+          api.invalidate(['time-off', 'dashboard']);
+          toast.info('Leave allocation deleted.');
+          fetchData();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete allocation.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      },
+      onCancel: () => setConfirmConfig(null)
+    });
+  };
+
   const handleRefuse = (id) => {
     setConfirmConfig({
       title: 'Reject Leave Request',
@@ -256,7 +307,7 @@ export default function TimeOffPage() {
                       {r.status}
                     </span>
                   </td>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                     {r.status === 'Pending' ? (
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <button onClick={() => handleApprove(r.id)} className="btn btn-primary" style={{ padding: '4px 8px', fontSize: '12px' }}>
@@ -271,6 +322,14 @@ export default function TimeOffPage() {
                         View Detail
                       </button>
                     )}
+                    <button
+                      onClick={(e) => handleDeleteRequest(r.id, e)}
+                      className="btn btn-secondary"
+                      title="Delete Request"
+                      style={{ padding: '4px 6px', color: 'var(--danger)' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -289,6 +348,7 @@ export default function TimeOffPage() {
                 <th>Remaining Balance</th>
                 <th>Validity Range</th>
                 <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -301,6 +361,16 @@ export default function TimeOffPage() {
                   <td style={{ color: '#10B981', fontWeight: '700', fontSize: '14px' }}>{a.remaining_days} {a.unit}</td>
                   <td style={{ fontSize: '12px' }}>{formatDate(a.validity_start)} to {formatDate(a.validity_end)}</td>
                   <td><span className="badge badge-approved">{a.status}</span></td>
+                  <td>
+                    <button
+                      onClick={(e) => handleDeleteAllocation(a.id, e)}
+                      className="btn btn-secondary"
+                      title="Delete Allocation"
+                      style={{ padding: '4px 6px', color: 'var(--danger)' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

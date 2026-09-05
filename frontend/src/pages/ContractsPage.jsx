@@ -3,7 +3,8 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/dateUtils';
-import { FileText, Plus, CheckCircle, Clock, Search, Edit2 } from 'lucide-react';
+import { FileText, Plus, CheckCircle, Clock, Search, Edit2, Trash2 } from 'lucide-react';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 export default function ContractsPage() {
   const { user } = useAuth();
@@ -14,6 +15,7 @@ export default function ContractsPage() {
   const [showModal, setShowModal] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [search, setSearch] = useState('');
+  const [deleteConfig, setDeleteConfig] = useState(null);
 
   const [formData, setFormData] = useState({
     contract_number: '', employee_id: '1', start_date: '2026-01-01', end_date: '2027-12-31',
@@ -30,6 +32,31 @@ export default function ContractsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteContract = (c, e) => {
+    if (e) e.stopPropagation();
+    setDeleteConfig({
+      isOpen: true,
+      title: 'Delete Contract',
+      message: `Are you sure you want to delete contract "${c.contract_number}" for ${c.employee_name}? This action cannot be undone.`,
+      confirmText: 'Delete Contract',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/contracts/${c.id}`);
+          api.invalidate(['contracts', 'employees', 'dashboard']);
+          toast.info(`Contract ${c.contract_number} deleted.`);
+          if (selectedContract?.id === c.id) setSelectedContract(null);
+          fetchContracts();
+        } catch (err) {
+          toast.error(err.message || 'Failed to delete contract.');
+        } finally {
+          setDeleteConfig(null);
+        }
+      },
+      onCancel: () => setDeleteConfig(null)
+    });
   };
 
   useEffect(() => {
@@ -135,7 +162,7 @@ export default function ContractsPage() {
                       {c.status === 'Active' ? <CheckCircle size={12} /> : <Clock size={12} />} {c.status}
                     </span>
                   </td>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <button
                       onClick={() => setSelectedContract(c)}
                       className="btn btn-secondary"
@@ -143,6 +170,16 @@ export default function ContractsPage() {
                     >
                       View Details
                     </button>
+                    {canManageContracts && (
+                      <button
+                        onClick={(e) => handleDeleteContract(c, e)}
+                        className="btn btn-secondary"
+                        title="Delete Contract"
+                        style={{ padding: '4px 8px', color: 'var(--danger)' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -222,6 +259,9 @@ export default function ContractsPage() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog {...deleteConfig} />
     </div>
   );
 }
