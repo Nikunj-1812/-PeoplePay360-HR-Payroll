@@ -5,7 +5,9 @@ const { JWT_SECRET } = require('../middleware/auth');
 
 async function login(email, password) {
   if (!email || !password) {
-    throw new Error('Invalid email or password.');
+    const err = new Error('Invalid email or password.');
+    err.status = 401;
+    throw err;
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -18,17 +20,23 @@ async function login(email, password) {
   `;
 
   if (users.length === 0) {
-    throw new Error('Invalid email or password.');
+    const err = new Error('Invalid email or password.');
+    err.status = 401;
+    throw err;
   }
 
   const user = users[0];
   if (!user.password_hash) {
-    throw new Error('Invalid email or password.');
+    const err = new Error('Invalid email or password.');
+    err.status = 401;
+    throw err;
   }
 
   const validPassword = await bcrypt.compare(password, user.password_hash);
   if (!validPassword) {
-    throw new Error('Invalid email or password.');
+    const err = new Error('Invalid email or password.');
+    err.status = 401;
+    throw err;
   }
 
   const token = jwt.sign(

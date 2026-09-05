@@ -263,9 +263,7 @@ async function ensureDemoUsers() {
     { name: 'HR Manager', email: 'hrmanager@peoplepay360.com', pass: 'HRManager@123', role: 'hr_manager', empId: empId2 },
     { name: 'HR Payroll User', email: 'payrolluser@peoplepay360.com', pass: 'PayrollUser@123', role: 'hr_payroll_user', empId: empId3 },
     { name: 'HR Payroll Manager', email: 'payrollmanager@peoplepay360.com', pass: 'PayrollManager@123', role: 'hr_payroll_manager', empId: empId3 },
-    { name: 'Employee User', email: 'employee@peoplepay360.com', pass: 'Employee@123', role: 'employee', empId: empId1 },
-    { name: 'HR Payroll Manager (Alt)', email: 'payroll.manager@peoplepay360.com', pass: 'password123', role: 'hr_payroll_manager', empId: empId3 },
-    { name: 'HR Payroll User (Alt)', email: 'payroll.user@peoplepay360.com', pass: 'password123', role: 'hr_payroll_user', empId: empId3 }
+    { name: 'Employee User', email: 'employee@peoplepay360.com', pass: 'Employee@123', role: 'employee', empId: empId1 }
   ];
 
   for (const def of demoDefs) {
@@ -285,6 +283,7 @@ async function ensureDemoUsers() {
         VALUES (${def.name}, ${cleanEmail}, ${hash}, ${def.role}, ${def.empId})
       `;
     }
+  }
   }
 }
 

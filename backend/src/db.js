@@ -1,5 +1,10 @@
 const path = require('node:path');
+const dns = require('node:dns');
 const dotenv = require('dotenv');
+
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 const { neon } = require('@neondatabase/serverless');
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
@@ -11,8 +16,20 @@ let sql;
 
 if (process.env.DATABASE_URL) {
   const neonSql = neon(process.env.DATABASE_URL);
-  sql = (strings, ...values) => neonSql(strings, ...values);
-  sql.unsafe = async (queryStr) => neonSql.transaction([neonSql(queryStr)]).then(res => res[0]);
+  
+  const executeWithRetry = async (fn, retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (i === retries - 1) throw err;
+        await new Promise(r => setTimeout(r, 300 * (i + 1)));
+      }
+    }
+  };
+
+  sql = (strings, ...values) => executeWithRetry(() => neonSql(strings, ...values));
+  sql.unsafe = async (queryStr) => executeWithRetry(() => neonSql.transaction([neonSql(queryStr)]).then(res => res[0]));
 } else {
   console.log('[DB] DATABASE_URL not detected. Using high-performance in-memory database engine for local demo/testing.');
 
