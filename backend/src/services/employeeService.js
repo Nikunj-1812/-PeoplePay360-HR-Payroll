@@ -1,0 +1,105 @@
+const { sql } = require('../db');
+
+async function getEmployees(filters = {}) {
+  let query = `
+    SELECT 
+      e.*,
+      d.name as department_name,
+      ws.name as schedule_name,
+      (SELECT COUNT(*)::int FROM contracts c WHERE c.employee_id = e.id) as contract_count,
+      (SELECT COUNT(*)::int FROM payslips p WHERE p.employee_id = e.id) as payslip_count
+    FROM employees e
+    LEFT JOIN departments d ON e.department_id = d.id
+    LEFT JOIN working_schedules ws ON e.schedule_id = ws.id
+    WHERE 1=1
+  `;
+
+  if (filters.search) {
+    const s = `%${filters.search.toLowerCase()}%`;
+    query += ` AND (LOWER(e.first_name || ' ' || e.last_name) LIKE '${s}' OR LOWER(e.email) LIKE '${s}' OR LOWER(e.emp_id) LIKE '${s}' OR LOWER(e.job_position) LIKE '${s}')`;
+  }
+  if (filters.department_id) {
+    query += ` AND e.department_id = ${parseInt(filters.department_id, 10)}`;
+  }
+  if (filters.status) {
+    query += ` AND e.status = '${filters.status}'`;
+  }
+
+  query += ` ORDER BY e.id DESC`;
+
+  return await sql.unsafe(query);
+}
+
+async function getEmployeeById(id) {
+  const emps = await sql`
+    SELECT 
+      e.*,
+      d.name as department_name,
+      ws.name as schedule_name,
+      m.first_name || ' ' || m.last_name as manager_name
+    FROM employees e
+    LEFT JOIN departments d ON e.department_id = d.id
+    LEFT JOIN working_schedules ws ON e.schedule_id = ws.id
+    LEFT JOIN employees m ON e.manager_id = m.id
+    WHERE e.id = ${id}
+  `;
+
+  if (emps.length === 0) throw new Error('Employee not found');
+  const employee = emps[0];
+
+  // Smart links counts
+  const [contracts] = await sql`SELECT count(*)::int as count FROM contracts WHERE employee_id = ${id}`;
+  const [attendance] = await sql`SELECT count(*)::int as count FROM attendance WHERE employee_id = ${id}`;
+  const [timeOff] = await sql`SELECT count(*)::int as count FROM time_off_requests WHERE employee_id = ${id}`;
+  const [payslips] = await sql`SELECT count(*)::int as count FROM payslips WHERE employee_id = ${id}`;
+  const [allocations] = await sql`SELECT count(*)::int as count FROM time_off_allocations WHERE employee_id = ${id}`;
+
+  return {
+    ...employee,
+    smart_links: {
+      contracts: contracts.count,
+      attendance: attendance.count,
+      time_off_requests: timeOff.count,
+      payslips: payslips.count,
+      allocations: allocations.count
+    }
+  };
+}
+
+async function createEmployee(data) {
+  const { emp_id, first_name, last_name, email, phone, department_id, manager_id, schedule_id, job_position, bank_name, account_number, ifsc_code } = data;
+
+  const [newEmp] = await sql`
+    INSERT INTO employees 
+      (emp_id, first_name, last_name, email, phone, department_id, manager_id, schedule_id, job_position, status, bank_name, account_number, ifsc_code)
+    VALUES
+      (${emp_id}, ${first_name}, ${last_name}, ${email}, ${phone || null}, ${department_id || null}, ${manager_id || null}, ${schedule_id || null}, ${job_position}, 'Active', ${bank_name || null}, ${account_number || null}, ${ifsc_code || null})
+    RETURNING *
+  `;
+  return newEmp;
+}
+
+async function updateEmployee(id, data) {
+  const { first_name, last_name, email, phone, department_id, manager_id, schedule_id, job_position, status, bank_name, account_number, ifsc_code } = data;
+
+  const [updated] = await sql`
+    UPDATE employees SET
+      first_name = ${first_name},
+      last_name = ${last_name},
+      email = ${email},
+      phone = ${phone},
+      department_id = ${department_id || null},
+      manager_id = ${manager_id || null},
+      schedule_id = ${schedule_id || null},
+      job_position = ${job_position},
+      status = ${status || 'Active'},
+      bank_name = ${bank_name},
+      account_number = ${account_number},
+      ifsc_code = ${ifsc_code}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return updated;
+}
+
+module.exports = { getEmployees, getEmployeeById, createEmployee, updateEmployee };
