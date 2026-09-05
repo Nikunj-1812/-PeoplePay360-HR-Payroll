@@ -284,7 +284,6 @@ async function ensureDemoUsers() {
       `;
     }
   }
-  }
 }
 
 async function seedData() {
