@@ -244,6 +244,20 @@ async function initializeDatabase() {
     )
   `;
 
+  // 15. Notifications
+  await sql`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      title VARCHAR(255) NOT NULL,
+      message TEXT NOT NULL,
+      type VARCHAR(50) DEFAULT 'info',
+      link_tab VARCHAR(50),
+      is_read BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
   console.log('[DB] Core tables created/updated. Seeding initial data...');
   await seedData();
   await ensureDemoUsers();

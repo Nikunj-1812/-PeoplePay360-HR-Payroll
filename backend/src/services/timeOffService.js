@@ -1,4 +1,5 @@
 const { sql } = require('../db');
+const notificationService = require('./notificationService');
 
 // Get time off types
 async function getTimeOffTypes() {
@@ -143,6 +144,21 @@ async function createRequest(data) {
     VALUES (${employee_id}, ${time_off_type_id}, ${start_date}, ${end_date}, ${duration}, 'Pending', ${reason || ''})
     RETURNING *
   `;
+
+  // Notify HR Managers & Admins
+  try {
+    const [emp] = await sql`SELECT first_name, last_name FROM employees WHERE id = ${employee_id}`;
+    const empName = emp ? `${emp.first_name} ${emp.last_name}` : `Employee #${employee_id}`;
+    await notificationService.notifyRoles(['admin', 'hr_manager', 'hr_payroll_manager'], {
+      title: 'New Leave Request',
+      message: `${empName} requested ${duration} day(s) of leave (${types[0]?.name || 'Time Off'}).`,
+      type: 'leave',
+      link_tab: 'time-off'
+    });
+  } catch (err) {
+    console.error('Notification trigger error:', err);
+  }
+
   return req;
 }
 
@@ -194,6 +210,18 @@ async function approveRequest(id, approverName = 'HR Manager') {
     RETURNING *
   `;
 
+  // Notify Employee
+  try {
+    await notificationService.notifyEmployeeUser(req.employee_id, {
+      title: 'Leave Request Approved',
+      message: `Your leave request for ${req.duration} day(s) was APPROVED by ${approverName}.`,
+      type: 'leave',
+      link_tab: 'time-off'
+    });
+  } catch (err) {
+    console.error('Notification trigger error:', err);
+  }
+
   return updated;
 }
 
@@ -206,6 +234,21 @@ async function refuseRequest(id, approverName = 'HR Manager') {
     WHERE id = ${id}
     RETURNING *
   `;
+
+  // Notify Employee
+  try {
+    if (updated) {
+      await notificationService.notifyEmployeeUser(updated.employee_id, {
+        title: 'Leave Request Refused',
+        message: `Your leave request for ${updated.duration} day(s) was REFUSED by ${approverName}.`,
+        type: 'leave',
+        link_tab: 'time-off'
+      });
+    }
+  } catch (err) {
+    console.error('Notification trigger error:', err);
+  }
+
   return updated;
 }
 

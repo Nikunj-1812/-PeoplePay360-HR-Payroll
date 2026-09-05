@@ -6,6 +6,8 @@ import {
 } from 'recharts';
 import { Wallet, Users, FileCheck, CalendarCheck, Activity, AlertTriangle, Filter } from 'lucide-react';
 
+import { CenteredSpinner } from '../components/ui/Loading';
+
 export default function DashboardPage() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,7 @@ export default function DashboardPage() {
   }, [period, dept]);
 
   if (loading) {
-    return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading live dashboard analytics...</div>;
+    return <CenteredSpinner height="400px" />;
   }
   if (error) {
     return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--danger)' }}>Error loading dashboard: {error}</div>;

@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/dateUtils';
 import { Search, Plus, LayoutGrid, List, User, Mail, Phone, Building2, Briefcase, FileText, Clock, WalletCards, Receipt, History, Award, Trash2, Edit2, ShieldCheck } from 'lucide-react';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 
 export default function EmployeesPage({ onNavigateTab }) {
   const toast = useToast();
@@ -201,11 +202,11 @@ export default function EmployeesPage({ onNavigateTab }) {
 
       {/* Content Rendering */}
       {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading employee master data...</div>
+        <CenteredSpinner />
       ) : viewMode === 'kanban' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-          {employees.map(emp => (
-            <div key={emp.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer' }} onClick={() => handleOpenDetail(emp.id)}>
+          {employees.map((emp, idx) => (
+            <div key={`emp-kanban-${emp.id || idx}-${idx}`} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer' }} onClick={() => handleOpenDetail(emp.id)}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{
                   width: '44px', height: '44px', borderRadius: '50%', backgroundColor: 'var(--primary)',
@@ -271,8 +272,8 @@ export default function EmployeesPage({ onNavigateTab }) {
               </tr>
             </thead>
             <tbody>
-              {employees.map(emp => (
-                <tr key={emp.id}>
+              {employees.map((emp, idx) => (
+                <tr key={`emp-row-${emp.id || idx}-${idx}`}>
                   <td style={{ fontWeight: '600' }}>{emp.emp_id}</td>
                   <td>{emp.first_name} {emp.last_name}</td>
                   <td>{emp.department_name || 'General'}</td>
@@ -414,7 +415,7 @@ export default function EmployeesPage({ onNavigateTab }) {
                     {empHistory?.contracts?.length > 0 ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {empHistory.contracts.map((c, i) => (
-                          <div key={c.id || i} style={{ padding: '10px', backgroundColor: 'var(--surface)', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div key={`emp-hist-contract-${c.id || i}-${i}`} style={{ padding: '10px', backgroundColor: 'var(--surface)', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{c.contract_ref || `Contract #${c.id}`}</span>
                               <span className={`badge ${c.status === 'Active' ? 'badge-active' : 'badge-warning'}`}>{c.status}</span>
@@ -441,14 +442,28 @@ export default function EmployeesPage({ onNavigateTab }) {
                     {empHistory?.payslips?.length > 0 ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {empHistory.payslips.map((p, i) => (
-                          <div key={p.id || i} style={{ padding: '8px 10px', backgroundColor: 'var(--surface)', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div key={`emp-hist-payslip-${p.id || i}-${i}`} style={{ padding: '8px 10px', backgroundColor: 'var(--surface)', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                               <div style={{ fontWeight: '600' }}>{p.payrun_name || `Period ${formatDate(p.period_start)} - ${formatDate(p.period_end)}`}</div>
                               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Gross: ₹{p.gross_salary?.toLocaleString()} • Deductions: ₹{p.total_deductions?.toLocaleString()}</div>
                             </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontWeight: '700', color: '#10B981' }}>Net: ₹{p.net_salary?.toLocaleString()}</div>
-                              <span className="badge badge-active" style={{ fontSize: '10px' }}>{p.status}</span>
+                            <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div>
+                                <div style={{ fontWeight: '700', color: '#10B981' }}>Net: ₹{p.net_salary?.toLocaleString()}</div>
+                                <span className="badge badge-active" style={{ fontSize: '10px' }}>{p.status}</span>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const token = localStorage.getItem('pp360_token');
+                                  window.open(`http://localhost:5000/api/payslips/${p.id}/pdf?token=${token}`, '_blank');
+                                }}
+                                className="btn btn-secondary"
+                                style={{ padding: '4px 6px', fontSize: '11px' }}
+                                title="Download PDF Payslip"
+                              >
+                                <Download size={12} /> PDF
+                              </button>
                             </div>
                           </div>
                         ))}

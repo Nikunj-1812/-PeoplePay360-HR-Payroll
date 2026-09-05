@@ -12,7 +12,7 @@ let fallbackBaseURL = DEPLOYED_URL && LOCAL_URL && DEPLOYED_URL !== LOCAL_URL
 
 const api = axios.create({
   baseURL: activeBaseURL,
-  timeout: 10000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }

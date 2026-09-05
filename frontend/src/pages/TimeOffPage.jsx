@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 import { formatDate } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
 import { WalletCards, Plus, CheckCircle, XCircle, Clock, Edit2, Trash2, Calendar, FileText } from 'lucide-react';
@@ -277,7 +278,7 @@ export default function TimeOffPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading leave records...</div>
+        <CenteredSpinner />
       ) : activeSubTab === 'requests' ? (
         <div className="data-table-container">
           <table className="data-table">
@@ -294,8 +295,8 @@ export default function TimeOffPage() {
               </tr>
             </thead>
             <tbody>
-              {requests.map(r => (
-                <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedRequest(r)}>
+              {requests.map((r, idx) => (
+                <tr key={`to-req-${r.id || idx}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedRequest(r)}>
                   <td style={{ fontWeight: '600' }}>{r.employee_name} ({r.emp_id})</td>
                   <td>{r.type_name}</td>
                   <td>{formatDate(r.start_date)}</td>
@@ -352,8 +353,8 @@ export default function TimeOffPage() {
               </tr>
             </thead>
             <tbody>
-              {allocations.map(a => (
-                <tr key={a.id}>
+              {allocations.map((a, idx) => (
+                <tr key={`to-alloc-${a.id || idx}-${idx}`}>
                   <td style={{ fontWeight: '600' }}>{a.employee_name} ({a.emp_id})</td>
                   <td>{a.type_name}</td>
                   <td>{a.allocated_days} {a.unit}</td>
@@ -378,8 +379,8 @@ export default function TimeOffPage() {
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-          {types.map(t => (
-            <div key={t.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {types.map((t, idx) => (
+            <div key={`to-type-${t.id || idx}-${idx}`} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: '700' }}>{t.name}</h3>
                 <div style={{ display: 'flex', gap: '4px' }}>
@@ -463,8 +464,8 @@ export default function TimeOffPage() {
               <div className="form-group">
                 <label className="form-label">Employee</label>
                 <select className="form-select" value={requestForm.employee_id} onChange={(e) => setRequestForm({ ...requestForm, employee_id: e.target.value })}>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
+                  {employees.map((emp, idx) => (
+                    <option key={`to-req-emp-${emp.id || idx}-${idx}`} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
                   ))}
                 </select>
               </div>
@@ -472,8 +473,8 @@ export default function TimeOffPage() {
               <div className="form-group">
                 <label className="form-label">Time Off Type</label>
                 <select className="form-select" value={requestForm.time_off_type_id} onChange={(e) => setRequestForm({ ...requestForm, time_off_type_id: e.target.value })}>
-                  {types.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.unit})</option>
+                  {types.map((t, idx) => (
+                    <option key={`to-req-type-${t.id || idx}-${idx}`} value={t.id}>{t.name} ({t.unit})</option>
                   ))}
                 </select>
               </div>
@@ -520,8 +521,8 @@ export default function TimeOffPage() {
               <div className="form-group">
                 <label className="form-label">Employee</label>
                 <select className="form-select" value={allocForm.employee_id} onChange={(e) => setAllocForm({ ...allocForm, employee_id: e.target.value })}>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
+                  {employees.map((emp, idx) => (
+                    <option key={`to-alloc-emp-${emp.id || idx}-${idx}`} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
                   ))}
                 </select>
               </div>
@@ -529,8 +530,8 @@ export default function TimeOffPage() {
               <div className="form-group">
                 <label className="form-label">Time Off Type</label>
                 <select className="form-select" value={allocForm.time_off_type_id} onChange={(e) => setAllocForm({ ...allocForm, time_off_type_id: e.target.value })}>
-                  {types.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.unit})</option>
+                  {types.map((t, idx) => (
+                    <option key={`to-alloc-type-${t.id || idx}-${idx}`} value={t.id}>{t.name} ({t.unit})</option>
                   ))}
                 </select>
               </div>

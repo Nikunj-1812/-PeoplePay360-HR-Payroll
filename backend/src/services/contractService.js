@@ -1,4 +1,5 @@
 const { sql } = require('../db');
+const notificationService = require('./notificationService');
 
 async function getContracts(employeeId = null) {
   const cleanEmpId = employeeId && !isNaN(employeeId) ? parseInt(employeeId, 10) : null;
@@ -43,6 +44,18 @@ async function createContract(data) {
       (${contract_number}, ${employee_id}, ${start_date}, ${end_date || null}, ${wage}, ${salary_structure_id || null}, ${department_id || null}, ${position}, 'Active', ${employment_terms || ''})
     RETURNING *
   `;
+
+  try {
+    await notificationService.notifyEmployeeUser(employee_id, {
+      title: 'New Contract Assigned',
+      message: `Contract #${contract_number} has been created for you with wage ₹${parseFloat(wage || 0).toLocaleString()}/mo.`,
+      type: 'contract',
+      link_tab: 'contracts'
+    });
+  } catch (err) {
+    console.error('Contract notification error:', err);
+  }
+
   return contract;
 }
 
@@ -61,6 +74,20 @@ async function updateContract(id, data) {
     WHERE id = ${id}
     RETURNING *
   `;
+
+  try {
+    if (updated) {
+      await notificationService.notifyEmployeeUser(updated.employee_id, {
+        title: 'Contract Terms Updated',
+        message: `Your contract #${updated.contract_number} terms have been updated by HR.`,
+        type: 'contract',
+        link_tab: 'contracts'
+      });
+    }
+  } catch (err) {
+    console.error('Contract notification error:', err);
+  }
+
   return updated;
 }
 

@@ -3,6 +3,7 @@ import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { CalendarDays, Plus, Clock, Users, Trash2 } from 'lucide-react';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 
 export default function SchedulesPage() {
   const toast = useToast();
@@ -105,11 +106,11 @@ export default function SchedulesPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading working schedules...</div>
+        <CenteredSpinner />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-          {schedules.map(s => (
-            <div key={s.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {schedules.map((s, idx) => (
+            <div key={`sched-card-${s.id || idx}-${idx}`} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <CalendarDays size={20} color="var(--secondary-blue)" />

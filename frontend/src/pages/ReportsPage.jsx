@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { formatDate, formatTime } from '../utils/dateUtils';
+import { CenteredSpinner } from '../components/ui/Loading';
 import { 
   FileSpreadsheet, Users, FileText, Clock, WalletCards, 
   Receipt, Download, Search, RefreshCw, Filter, Eye, ChevronRight 
@@ -162,10 +163,7 @@ export default function ReportsPage() {
       {/* Report Table */}
       <div className="card" style={{ padding: '0', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 12px auto' }} />
-            Loading report data...
-          </div>
+          <CenteredSpinner />
         ) : filteredData.length === 0 ? (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
             No records found for the selected report criteria.
@@ -255,7 +253,7 @@ export default function ReportsPage() {
               </thead>
               <tbody>
                 {filteredData.map((row, idx) => (
-                  <tr key={row.id || idx}>
+                  <tr key={`rpt-row-${row.id || idx}-${idx}`}>
                     {activeReport === 'employees' && (
                       <>
                         <td style={{ fontWeight: '600' }}>{row.emp_id}</td>

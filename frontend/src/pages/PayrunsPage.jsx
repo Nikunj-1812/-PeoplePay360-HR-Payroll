@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 import { formatDate } from '../utils/dateUtils';
 import { 
   Receipt, Plus, Calculator, CheckCircle2, DollarSign, Mail, 
@@ -63,9 +64,14 @@ export default function PayrunsPage() {
     try {
       setLoading(true);
       const res = await api.getFetch('/payruns');
-      setPayruns(res.data || []);
-      if (res.data?.length > 0 && !selectedPayrun) {
-        handleSelectPayrun(res.data[0].id);
+      const list = res.data || [];
+      setPayruns(list);
+      if (list.length > 0) {
+        if (!selectedPayrun || !list.some(p => p.id === selectedPayrun.id)) {
+          handleSelectPayrun(list[0].id);
+        }
+      } else {
+        setSelectedPayrun(null);
       }
     } catch (err) {
       console.error(err);
@@ -107,6 +113,7 @@ export default function PayrunsPage() {
       toast.warning('Please select at least one employee for the Payrun.');
       return;
     }
+    const toastId = toast.info(`Creating payroll batch with ${selectedEmpIds.length} employees... Please wait.`);
     try {
       const res = await api.post('/payruns', {
         ...step1Data,
@@ -115,9 +122,13 @@ export default function PayrunsPage() {
       api.invalidate(['payruns', 'dashboard', 'employees']);
       setShowWizard(false);
       setWizardStep(1);
-      toast.success('Payrun created successfully!');
-      fetchPayruns();
-      handleSelectPayrun(res.data.id);
+      toast.success(`Payrun "${step1Data.name}" created successfully with ${selectedEmpIds.length} employees!`);
+      const createdPayrunId = res.data.id;
+      const listRes = await api.getFetch('/payruns');
+      setPayruns(listRes.data || []);
+      if (createdPayrunId) {
+        await handleSelectPayrun(createdPayrunId);
+      }
     } catch (err) {
       toast.error(err.message || 'Failed to create payrun.');
     }
@@ -187,6 +198,32 @@ export default function PayrunsPage() {
     });
   };
 
+  const handleDownloadPDF = async (slipId, empName, e) => {
+    if (e) e.stopPropagation();
+    try {
+      toast.info('Downloading PDF payslip...');
+      const token = localStorage.getItem('pp360_token');
+      const response = await fetch(`http://localhost:5000/api/payslips/${slipId}/pdf?token=${token}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Payslip_${empName ? String(empName).replace(/\s+/g, '_') : slipId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('PDF Payslip downloaded!');
+    } catch (err) {
+      console.error('PDF download error:', err);
+      const token = localStorage.getItem('pp360_token');
+      window.open(`http://localhost:5000/api/payslips/${slipId}/pdf?token=${token}`, '_blank');
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -200,15 +237,15 @@ export default function PayrunsPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading payroll batches...</div>
+        <CenteredSpinner />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px' }}>
           {/* Payruns List Left */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: '700' }}>Payroll Batches</h3>
-            {payruns.map(pr => (
+            {payruns.map((pr, idx) => (
               <div
-                key={pr.id}
+                key={`pr-card-${pr.id || idx}-${idx}`}
                 onClick={() => handleSelectPayrun(pr.id)}
                 className="card"
                 style={{
@@ -242,7 +279,7 @@ export default function PayrunsPage() {
           </div>
 
           {/* Payrun Processing Workspace */}
-          {selectedPayrun && (
+          {selectedPayrun ? (
             <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* Header & State Actions */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
@@ -320,8 +357,8 @@ export default function PayrunsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedPayrun.payslips?.map(s => (
-                        <tr key={s.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedPayslip(s)}>
+                      {selectedPayrun.payslips?.map((s, idx) => (
+                        <tr key={`pr-payslip-${s.id || idx}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedPayslip(s)}>
                           <td style={{ fontWeight: '600' }}>{s.employee_name} ({s.emp_id})</td>
                           <td>{s.worked_days} days</td>
                           <td>₹ {parseFloat(s.gross_amount).toLocaleString('en-IN')}</td>
@@ -329,15 +366,14 @@ export default function PayrunsPage() {
                           <td style={{ fontWeight: '700', color: '#10B981' }}>₹ {parseFloat(s.net_amount).toLocaleString('en-IN')}</td>
                           <td><span className="badge badge-active">{s.status}</span></td>
                           <td onClick={(e) => e.stopPropagation()}>
-                            <a 
-                              href={`http://localhost:5000/api/payslips/${s.id}/pdf`} 
-                              target="_blank" 
-                              rel="noreferrer"
+                            <button 
+                              onClick={(e) => handleDownloadPDF(s.id, s.employee_name, e)}
                               className="btn btn-secondary"
                               style={{ padding: '4px 8px', fontSize: '11px' }}
+                              title="Download PDF Payslip"
                             >
                               <Download size={12} /> PDF
-                            </a>
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -345,6 +381,15 @@ export default function PayrunsPage() {
                   </table>
                 </div>
               </div>
+            </div>
+          ) : (
+            <div className="card" style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+              <Receipt size={44} color="var(--secondary-blue)" />
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' }}>No Payroll Batch Selected</h3>
+              <p style={{ fontSize: '13px', maxWidth: '400px' }}>Select an existing batch from the left list or create a new batch using the Payrun Wizard.</p>
+              <button onClick={() => { setWizardStep(1); setShowWizard(true); }} className="btn btn-primary" style={{ marginTop: '8px' }}>
+                <Plus size={16} /> New Payrun (Wizard)
+              </button>
             </div>
           )}
         </div>
@@ -372,14 +417,12 @@ export default function PayrunsPage() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <a 
-                  href={`http://localhost:5000/api/payslips/${selectedPayslip.id}/pdf`} 
-                  target="_blank" 
-                  rel="noreferrer"
+                <button 
+                  onClick={(e) => handleDownloadPDF(selectedPayslip.id, selectedPayslip.employee_name, e)}
                   className="btn btn-primary"
                 >
                   <Download size={15} /> Download PDF Payslip
-                </a>
+                </button>
                 <button onClick={() => setSelectedPayslip(null)} className="btn btn-secondary">Close</button>
               </div>
             </div>
@@ -407,8 +450,8 @@ export default function PayrunsPage() {
                 <div className="form-group">
                   <label className="form-label">Salary Structure</label>
                   <select className="form-select" value={step1Data.salary_structure_id} onChange={(e) => setStep1Data({ ...step1Data, salary_structure_id: e.target.value })}>
-                    {structures.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                    {structures.map((s, idx) => (
+                      <option key={`pr-struct-${s.id || idx}-${idx}`} value={s.id}>{s.name}</option>
                     ))}
                   </select>
                 </div>
@@ -437,10 +480,10 @@ export default function PayrunsPage() {
                 </p>
 
                 <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px' }}>
-                  {eligibleEmployees.map(emp => {
+                  {eligibleEmployees.map((emp, idx) => {
                     const isChecked = selectedEmpIds.includes(emp.id);
                     return (
-                      <div key={emp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', borderBottom: '1px solid var(--border-color)' }}>
+                      <div key={`pr-el-emp-${emp.id || idx}-${idx}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px', borderBottom: '1px solid var(--border-color)' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13px' }}>
                           <input
                             type="checkbox"

@@ -3,6 +3,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 import { Sliders, Plus, CheckCircle, ArrowDown, Calculator, Search, Edit2, Trash2, ArrowUp, Layers } from 'lucide-react';
 
 export default function SalaryStructuresPage() {
@@ -170,15 +171,15 @@ export default function SalaryStructuresPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading salary structures...</div>
+        <CenteredSpinner />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px' }}>
           {/* Structures Left List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>Salary Structures ({structures.length})</h3>
-            {structures.map(s => (
+            {structures.map((s, idx) => (
               <div
-                key={s.id}
+                key={`sal-struct-${s.id || idx}-${idx}`}
                 onClick={() => handleSelectStructure(s.id)}
                 className="card"
                 style={{
@@ -264,8 +265,8 @@ export default function SalaryStructuresPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedStruct.rules?.map(r => (
-                      <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedRuleDetail(r)}>
+                    {selectedStruct.rules?.map((r, idx) => (
+                      <tr key={`sal-rule-${r.id || idx}-${idx}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedRuleDetail(r)}>
                         <td style={{ fontWeight: '700', color: 'var(--secondary-navy)' }}>{r.sequence}</td>
                         <td style={{ fontWeight: '700' }}>{r.code}</td>
                         <td>{r.name}</td>

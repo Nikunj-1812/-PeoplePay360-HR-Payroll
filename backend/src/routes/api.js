@@ -15,6 +15,7 @@ const emailService = require('../services/emailService');
 const dashboardService = require('../services/dashboardService');
 const reportService = require('../services/reportService');
 const redisService = require('../services/redisService');
+const notificationService = require('../services/notificationService');
 const { sql } = require('../db');
 
 // Async handler wrapper
@@ -46,8 +47,26 @@ router.get('/auth/me', authenticateToken, asyncHandler(async (req, res) => {
   res.json({ success: true, data: user });
 }));
 
+// GET /api/notifications
+router.get('/notifications', authenticateToken, asyncHandler(async (req, res) => {
+  const data = await notificationService.getUserNotifications(req.user.id);
+  res.json({ success: true, data });
+}));
+
+// PUT /api/notifications/:id/read
+router.put('/notifications/:id/read', authenticateToken, asyncHandler(async (req, res) => {
+  const data = await notificationService.markAsRead(req.params.id, req.user.id);
+  res.json({ success: true, data });
+}));
+
+// PUT /api/notifications/read-all
+router.put('/notifications/read-all', authenticateToken, asyncHandler(async (req, res) => {
+  const data = await notificationService.markAllAsRead(req.user.id);
+  res.json({ success: true, data });
+}));
+
 // GET /api/auth/users
-router.get('/auth/users', authenticateToken, requireRole(['admin']), asyncHandler(async (_req, res) => {
+router.get('/auth/users', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (_req, res) => {
   const cacheKey = 'pp360:users:all';
   const cached = await redisService.get(cacheKey);
   if (cached) {

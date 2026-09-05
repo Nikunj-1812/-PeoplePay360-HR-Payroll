@@ -3,6 +3,7 @@ import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 import { formatDate, formatTime } from '../utils/dateUtils';
 import { 
   Clock, CheckCircle, AlertTriangle, Play, Square, Edit2, Trash2,
@@ -320,7 +321,7 @@ export default function AttendancePage() {
           </div>
 
           {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading attendance logs...</div>
+            <CenteredSpinner />
           ) : filteredAttendance.length === 0 ? (
             <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
               No attendance records found matching filters.
@@ -341,10 +342,10 @@ export default function AttendancePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAttendance.map(a => {
+                  {filteredAttendance.map((a, idx) => {
                     const isException = a.status === 'Missing Checkout' || a.status === 'Late';
                     return (
-                      <tr key={a.id} style={{ backgroundColor: isException ? 'rgba(239, 68, 68, 0.04)' : 'transparent', cursor: 'pointer' }} onClick={() => setSelectedRecord(a)}>
+                      <tr key={`att-row-${a.id || idx}-${idx}`} style={{ backgroundColor: isException ? 'rgba(239, 68, 68, 0.04)' : 'transparent', cursor: 'pointer' }} onClick={() => setSelectedRecord(a)}>
                         <td style={{ fontWeight: '600' }}>{formatDate(a.date)}</td>
                         <td style={{ fontWeight: '600' }}>{a.employee_name} ({a.emp_id})</td>
                         <td>{a.department_name || 'General'}</td>
@@ -396,8 +397,8 @@ export default function AttendancePage() {
       {activeSubTab === 'schedules' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-            {schedules.map(s => (
-              <div key={s.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {schedules.map((s, idx) => (
+              <div key={`att-sched-${s.id || idx}-${idx}`} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <CalendarDays size={20} color="var(--secondary-blue)" />

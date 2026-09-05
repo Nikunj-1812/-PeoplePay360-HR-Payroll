@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/dateUtils';
 import { FileText, Plus, CheckCircle, Clock, Search, Edit2, Trash2 } from 'lucide-react';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 
 export default function ContractsPage() {
   const { user } = useAuth();
@@ -128,7 +129,7 @@ export default function ContractsPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading historical contracts...</div>
+        <CenteredSpinner />
       ) : filteredContracts.length === 0 ? (
         <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
           No employment contracts found.
@@ -149,8 +150,8 @@ export default function ContractsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredContracts.map(c => (
-                <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedContract(c)}>
+              {filteredContracts.map((c, index) => (
+                <tr key={`contract-${c.id || index}-${index}`} style={{ cursor: 'pointer' }} onClick={() => setSelectedContract(c)}>
                   <td style={{ fontWeight: '600', color: 'var(--secondary-navy)' }}>{c.contract_number}</td>
                   <td style={{ fontWeight: '600' }}>{c.employee_name} ({c.emp_id})</td>
                   <td>{c.position || 'N/A'}</td>
@@ -232,8 +233,8 @@ export default function ContractsPage() {
                 <div className="form-group">
                   <label className="form-label">Employee</label>
                   <select className="form-select" value={formData.employee_id} onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
+                    {employees.map((emp, index) => (
+                      <option key={`contract-emp-${emp.id || index}-${index}`} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
                     ))}
                   </select>
                 </div>

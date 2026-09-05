@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { CenteredSpinner } from '../components/ui/Loading';
 import { Settings, User, Plus, Search, Edit2, Key, Trash2, CheckCircle, UserCheck } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -160,7 +161,7 @@ export default function SettingsPage() {
           Configured System Users ({filteredUsers.length})
         </h3>
         {loading ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading users...</div>
+          <CenteredSpinner />
         ) : (
           <div className="data-table-container">
             <table className="data-table">
@@ -176,8 +177,8 @@ export default function SettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map(u => (
-                  <tr key={u.id}>
+                {filteredUsers.map((u, idx) => (
+                  <tr key={`user-row-${u.id || idx}-${idx}`}>
                     <td>#{u.id}</td>
                     <td style={{ fontWeight: '600' }}>{u.name}</td>
                     <td>{u.email}</td>
@@ -272,8 +273,8 @@ export default function SettingsPage() {
                   <label className="form-label">Link to Employee Profile (Optional)</label>
                   <select className="form-select" value={createForm.employee_id} onChange={(e) => setCreateForm({ ...createForm, employee_id: e.target.value })}>
                     <option value="">-- No Linked Employee (Admin/HR User) --</option>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
+                    {employees.map((emp, idx) => (
+                      <option key={`settings-create-emp-${emp.id || idx}-${idx}`} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
                     ))}
                   </select>
                 </div>
@@ -319,8 +320,8 @@ export default function SettingsPage() {
                   <label className="form-label">Linked Employee Profile</label>
                   <select className="form-select" value={editForm.employee_id} onChange={(e) => setEditForm({ ...editForm, employee_id: e.target.value })}>
                     <option value="">-- No Linked Employee --</option>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
+                    {employees.map((emp, idx) => (
+                      <option key={`settings-edit-emp-${emp.id || idx}-${idx}`} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.emp_id})</option>
                     ))}
                   </select>
                 </div>
