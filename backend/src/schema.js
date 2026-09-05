@@ -258,25 +258,34 @@ async function ensureDemoUsers() {
   const emp3 = await sql`SELECT id FROM employees ORDER BY id ASC OFFSET 2 LIMIT 1`;
   const empId3 = emp3.length > 0 ? emp3[0].id : empId1;
 
-  const passAdmin = await bcrypt.hash('Admin@123', 10);
-  const passHRMgr = await bcrypt.hash('HRManager@123', 10);
-  const passPRUser = await bcrypt.hash('PayrollUser@123', 10);
-  const passPRMgr = await bcrypt.hash('PayrollManager@123', 10);
-  const passEmp = await bcrypt.hash('Employee@123', 10);
-  const passDefault = await bcrypt.hash('password123', 10);
+  const demoDefs = [
+    { name: 'Admin User', email: 'admin@peoplepay360.com', pass: 'Admin@123', role: 'admin', empId: empId1 },
+    { name: 'HR Manager', email: 'hrmanager@peoplepay360.com', pass: 'HRManager@123', role: 'hr_manager', empId: empId2 },
+    { name: 'HR Payroll User', email: 'payrolluser@peoplepay360.com', pass: 'PayrollUser@123', role: 'hr_payroll_user', empId: empId3 },
+    { name: 'HR Payroll Manager', email: 'payrollmanager@peoplepay360.com', pass: 'PayrollManager@123', role: 'hr_payroll_manager', empId: empId3 },
+    { name: 'Employee User', email: 'employee@peoplepay360.com', pass: 'Employee@123', role: 'employee', empId: empId1 },
+    { name: 'HR Payroll Manager (Alt)', email: 'payroll.manager@peoplepay360.com', pass: 'password123', role: 'hr_payroll_manager', empId: empId3 },
+    { name: 'HR Payroll User (Alt)', email: 'payroll.user@peoplepay360.com', pass: 'password123', role: 'hr_payroll_user', empId: empId3 }
+  ];
 
-  await sql`
-    INSERT INTO users (name, email, password_hash, role, employee_id)
-    VALUES
-      ('Admin User', 'admin@peoplepay360.com', ${passAdmin}, 'admin', ${empId1}),
-      ('HR Payroll Manager', 'payrollmanager@peoplepay360.com', ${passPRMgr}, 'hr_payroll_manager', ${empId3}),
-      ('HR Payroll User', 'payrolluser@peoplepay360.com', ${passPRUser}, 'hr_payroll_user', ${empId3}),
-      ('HR Manager', 'hrmanager@peoplepay360.com', ${passHRMgr}, 'hr_manager', ${empId2}),
-      ('Employee User', 'employee@peoplepay360.com', ${passEmp}, 'employee', ${empId1}),
-      ('HR Payroll Manager (Alt)', 'payroll.manager@peoplepay360.com', ${passDefault}, 'hr_payroll_manager', ${empId3}),
-      ('HR Payroll User (Alt)', 'payroll.user@peoplepay360.com', ${passDefault}, 'hr_payroll_user', ${empId3})
-    ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, employee_id = EXCLUDED.employee_id
-  `;
+  for (const def of demoDefs) {
+    const cleanEmail = def.email.trim().toLowerCase();
+    const hash = await bcrypt.hash(def.pass, 10);
+    const existing = await sql`SELECT id FROM users WHERE LOWER(TRIM(email)) = ${cleanEmail}`;
+
+    if (existing.length > 0) {
+      await sql`
+        UPDATE users 
+        SET name = ${def.name}, email = ${cleanEmail}, password_hash = ${hash}, role = ${def.role}, employee_id = ${def.empId}
+        WHERE id = ${existing[0].id}
+      `;
+    } else {
+      await sql`
+        INSERT INTO users (name, email, password_hash, role, employee_id)
+        VALUES (${def.name}, ${cleanEmail}, ${hash}, ${def.role}, ${def.empId})
+      `;
+    }
+  }
 }
 
 async function seedData() {

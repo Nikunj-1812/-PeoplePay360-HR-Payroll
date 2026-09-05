@@ -4,11 +4,17 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../middleware/auth');
 
 async function login(email, password) {
+  if (!email || !password) {
+    throw new Error('Invalid email or password.');
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+
   const users = await sql`
     SELECT u.*, e.first_name, e.last_name, e.department_id, e.job_position
     FROM users u
     LEFT JOIN employees e ON u.employee_id = e.id
-    WHERE u.email = ${email}
+    WHERE LOWER(TRIM(u.email)) = ${normalizedEmail}
   `;
 
   if (users.length === 0) {
@@ -16,6 +22,10 @@ async function login(email, password) {
   }
 
   const user = users[0];
+  if (!user.password_hash) {
+    throw new Error('Invalid email or password.');
+  }
+
   const validPassword = await bcrypt.compare(password, user.password_hash);
   if (!validPassword) {
     throw new Error('Invalid email or password.');
