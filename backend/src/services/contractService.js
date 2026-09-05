@@ -1,7 +1,7 @@
 const { sql } = require('../db');
 
 async function getContracts(employeeId = null) {
-  let query = `
+  return await sql`
     SELECT 
       c.*,
       e.first_name || ' ' || e.last_name as employee_name,
@@ -12,14 +12,9 @@ async function getContracts(employeeId = null) {
     JOIN employees e ON c.employee_id = e.id
     LEFT JOIN departments d ON c.department_id = d.id
     LEFT JOIN salary_structures ss ON c.salary_structure_id = ss.id
+    WHERE (${employeeId ? parseInt(employeeId, 10) : null}::int IS NULL OR c.employee_id = ${employeeId ? parseInt(employeeId, 10) : null})
+    ORDER BY c.id DESC
   `;
-
-  if (employeeId) {
-    query += ` WHERE c.employee_id = ${parseInt(employeeId, 10)}`;
-  }
-  query += ` ORDER BY c.id DESC`;
-
-  return await sql.unsafe(query);
 }
 
 async function findApplicableContract(employeeId, periodStart, periodEnd) {

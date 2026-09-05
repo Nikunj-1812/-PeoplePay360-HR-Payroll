@@ -1,7 +1,9 @@
 const { sql } = require('../db');
 
 async function getEmployees(filters = {}) {
-  let query = `
+  const searchPattern = filters.search ? `%${filters.search.toLowerCase()}%` : null;
+
+  return await sql`
     SELECT 
       e.*,
       d.name as department_name,
@@ -11,23 +13,16 @@ async function getEmployees(filters = {}) {
     FROM employees e
     LEFT JOIN departments d ON e.department_id = d.id
     LEFT JOIN working_schedules ws ON e.schedule_id = ws.id
-    WHERE 1=1
+    WHERE (${searchPattern}::text IS NULL OR (
+      LOWER(e.first_name || ' ' || e.last_name) LIKE ${searchPattern} OR 
+      LOWER(e.email) LIKE ${searchPattern} OR 
+      LOWER(e.emp_id) LIKE ${searchPattern} OR 
+      LOWER(e.job_position) LIKE ${searchPattern}
+    ))
+    AND (${filters.department_id ? parseInt(filters.department_id, 10) : null}::int IS NULL OR e.department_id = ${filters.department_id ? parseInt(filters.department_id, 10) : null})
+    AND (${filters.status || null}::text IS NULL OR e.status = ${filters.status || null})
+    ORDER BY e.id DESC
   `;
-
-  if (filters.search) {
-    const s = `%${filters.search.toLowerCase()}%`;
-    query += ` AND (LOWER(e.first_name || ' ' || e.last_name) LIKE '${s}' OR LOWER(e.email) LIKE '${s}' OR LOWER(e.emp_id) LIKE '${s}' OR LOWER(e.job_position) LIKE '${s}')`;
-  }
-  if (filters.department_id) {
-    query += ` AND e.department_id = ${parseInt(filters.department_id, 10)}`;
-  }
-  if (filters.status) {
-    query += ` AND e.status = '${filters.status}'`;
-  }
-
-  query += ` ORDER BY e.id DESC`;
-
-  return await sql.unsafe(query);
 }
 
 async function getEmployeeById(id) {

@@ -38,6 +38,7 @@ async function startServer() {
     console.log(`PeoplePay360 Backend running on http://localhost:${port}`);
     console.log(`Neon Database Connected.`);
   });
+  setInterval(() => {}, 60000);
 }
 
 if (require.main === module) {
