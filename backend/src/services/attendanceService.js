@@ -46,7 +46,11 @@ async function clockOut(employeeId) {
   `;
 
   if (existing.length === 0) {
-    throw new Error('No check-in record found for today.');
+    throw new Error('You must Check In before Check Out. No check-in record found for today.');
+  }
+
+  if (existing[0].check_out) {
+    throw new Error('Already checked out for today.');
   }
 
   const checkInTime = new Date(existing[0].check_in).getTime();

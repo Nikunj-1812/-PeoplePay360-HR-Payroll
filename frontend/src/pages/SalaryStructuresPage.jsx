@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
-import { Sliders, Plus, CheckCircle, ArrowDown, Calculator } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import { Sliders, Plus, CheckCircle, ArrowDown, Calculator, Search } from 'lucide-react';
 
 export default function SalaryStructuresPage() {
+  const toast = useToast();
   const [structures, setStructures] = useState([]);
   const [selectedStruct, setSelectedStruct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showRuleModal, setShowRuleModal] = useState(false);
+  const [selectedRule, setSelectedRule] = useState(null);
 
   const [ruleForm, setRuleForm] = useState({
     name: '', code: '', category: 'allowance', sequence: 25, computation_type: 'percentage', amount: 0, percentage: 10, percentage_based_on: 'BASIC', formula_expression: ''
@@ -15,11 +18,10 @@ export default function SalaryStructuresPage() {
   const fetchStructures = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/salary/structures');
+      const res = await api.getFetch('/salary/structures');
       setStructures(res.data || []);
       if (res.data?.length > 0 && !selectedStruct) {
-        const detail = await api.get(`/salary/structures/${res.data[0].id}`);
-        setSelectedStruct(detail.data);
+        handleSelectStructure(res.data[0].id);
       }
     } catch (err) {
       console.error(err);
@@ -34,10 +36,10 @@ export default function SalaryStructuresPage() {
 
   const handleSelectStructure = async (id) => {
     try {
-      const detail = await api.get(`/salary/structures/${id}`);
+      const detail = await api.getFetch(`/salary/structures/${id}`);
       setSelectedStruct(detail.data);
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to fetch salary structure.');
     }
   };
 
@@ -48,10 +50,12 @@ export default function SalaryStructuresPage() {
         ...ruleForm,
         salary_structure_id: selectedStruct.id
       });
+      api.invalidate(['salary', 'payruns', 'dashboard']);
       setShowRuleModal(false);
+      toast.success('Salary rule created successfully.');
       handleSelectStructure(selectedStruct.id);
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to create rule.');
     }
   };
 
@@ -59,7 +63,7 @@ export default function SalaryStructuresPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <div>
         <h1 style={{ fontSize: '22px', fontWeight: '700' }}>Salary Structures & Ordered Rules Engine</h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Configurable salary component computation sequence driving payroll computation</p>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Configurable standalone salary component computation sequence driving payroll computation</p>
       </div>
 
       {loading ? (
@@ -119,7 +123,7 @@ export default function SalaryStructuresPage() {
                   </thead>
                   <tbody>
                     {selectedStruct.rules?.map(r => (
-                      <tr key={r.id}>
+                      <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedRule(r)}>
                         <td style={{ fontWeight: '700', color: 'var(--secondary-navy)' }}>{r.sequence}</td>
                         <td style={{ fontWeight: '700' }}>{r.code}</td>
                         <td>{r.name}</td>
@@ -143,12 +147,39 @@ export default function SalaryStructuresPage() {
         </div>
       )}
 
+      {/* Salary Rule Detail Modal */}
+      {selectedRule && (
+        <div className="modal-overlay" onClick={() => setSelectedRule(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Salary Rule Detail</h3>
+              <button onClick={() => setSelectedRule(null)} className="btn btn-secondary">✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '8px', fontSize: '13px' }}>
+                <div><strong>Rule Code:</strong> {selectedRule.code}</div>
+                <div><strong>Sequence:</strong> {selectedRule.sequence}</div>
+                <div style={{ gridColumn: 'span 2' }}><strong>Rule Name:</strong> {selectedRule.name}</div>
+                <div><strong>Category:</strong> {selectedRule.category}</div>
+                <div><strong>Computation Type:</strong> {selectedRule.computation_type}</div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <strong>Formula / Value:</strong> {selectedRule.computation_type === 'percentage' ? `${selectedRule.percentage}% of ${selectedRule.percentage_based_on}` : selectedRule.computation_type === 'fixed' ? `₹ ${selectedRule.amount}` : selectedRule.formula_expression}
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setSelectedRule(null)} className="btn btn-secondary">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* New Salary Rule Modal */}
       {showRuleModal && (
         <div className="modal-overlay" onClick={() => setShowRuleModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Add Salary Rule to {selectedStruct.name}</h3>
+              <h3 className="modal-title">Add Salary Rule to {selectedStruct?.name}</h3>
               <button onClick={() => setShowRuleModal(false)} className="btn btn-secondary">✕</button>
             </div>
             <form onSubmit={handleCreateRule}>

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { LogIn, Shield, Users, Wallet, ShieldCheck, ArrowLeft } from 'lucide-react';
 
 export default function LoginPage({ onCancel }) {
   const { login } = useAuth();
+  const toast = useToast();
   
   const [viewMode, setViewMode] = useState('signin'); // 'signin' | 'demo'
   const [email, setEmail] = useState('');
@@ -17,9 +19,12 @@ export default function LoginPage({ onCancel }) {
     setLoading(true);
     try {
       await login(email, password);
+      toast.success('Login successful!');
       if (onCancel) onCancel();
     } catch (err) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      const errMsg = err.message || 'Login failed. Please check your credentials.';
+      setError(errMsg);
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }
@@ -32,9 +37,12 @@ export default function LoginPage({ onCancel }) {
     setLoading(true);
     try {
       await login(demoEmail, demoPass);
+      toast.success('Demo login successful!');
       if (onCancel) onCancel();
     } catch (err) {
-      setError(err.message || 'Demo login failed.');
+      const errMsg = err.message || 'Demo login failed.';
+      setError(errMsg);
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }

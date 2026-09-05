@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useToast } from '../../context/ToastContext';
+import ConfirmDialog from '../ui/ConfirmDialog';
 import { 
   LayoutDashboard, Users, FileText, CalendarDays, Clock, 
   WalletCards, Receipt, Sliders, Settings, Sun, Moon, 
@@ -10,6 +12,10 @@ import {
 export default function Shell({ activeTab, setActiveTab, children }) {
   const { user, switchRole, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const toast = useToast();
+
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   // Role permissions filter
   const currentRole = user?.role || 'admin';
@@ -18,7 +24,6 @@ export default function Shell({ activeTab, setActiveTab, children }) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['employee', 'hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'] },
     { id: 'employees', label: 'Employees', icon: Users, roles: ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'] },
     { id: 'contracts', label: 'Contracts', icon: FileText, roles: ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'] },
-    { id: 'schedules', label: 'Working Schedules', icon: CalendarDays, roles: ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'] },
     { id: 'attendance', label: 'Attendance', icon: Clock, roles: ['employee', 'hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'] },
     { id: 'time-off', label: 'Time Off', icon: WalletCards, roles: ['employee', 'hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'] },
     { id: 'payroll', label: 'Payruns', icon: Receipt, roles: ['hr_payroll_user', 'hr_payroll_manager', 'admin'] },
@@ -29,6 +34,25 @@ export default function Shell({ activeTab, setActiveTab, children }) {
   const visibleNav = navItems.filter(item => 
     currentRole === 'admin' || item.roles.includes(currentRole)
   );
+
+  const handleRoleSelect = async (newRole) => {
+    if (switching) return;
+    try {
+      setSwitching(true);
+      const res = await switchRole(newRole);
+      toast.success(`Demo switched to ${res.label}`);
+    } catch (err) {
+      toast.error(err.message || 'Failed to switch demo account.');
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const handleConfirmLogout = () => {
+    logout();
+    toast.info('Logged out successfully.');
+    setShowLogoutConfirm(false);
+  };
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--surface)' }}>
@@ -101,7 +125,7 @@ export default function Shell({ activeTab, setActiveTab, children }) {
             </div>
           </div>
           <button
-            onClick={logout}
+            onClick={() => setShowLogoutConfirm(true)}
             style={{
               background: 'transparent',
               border: 'none',
@@ -146,7 +170,8 @@ export default function Shell({ activeTab, setActiveTab, children }) {
               <span style={{ fontWeight: '600', color: 'var(--text-muted)' }}>Role Demo:</span>
               <select
                 value={currentRole}
-                onChange={(e) => switchRole(e.target.value)}
+                disabled={switching}
+                onChange={(e) => handleRoleSelect(e.target.value)}
                 style={{
                   padding: '4px 8px',
                   borderRadius: '4px',
@@ -155,7 +180,7 @@ export default function Shell({ activeTab, setActiveTab, children }) {
                   color: 'var(--text-main)',
                   fontSize: '12px',
                   fontWeight: '600',
-                  cursor: 'pointer'
+                  cursor: switching ? 'not-allowed' : 'pointer'
                 }}
               >
                 <option value="admin">Admin</option>
@@ -179,7 +204,7 @@ export default function Shell({ activeTab, setActiveTab, children }) {
 
             {/* Log Out Button */}
             <button
-              onClick={logout}
+              onClick={() => setShowLogoutConfirm(true)}
               className="btn btn-secondary"
               style={{
                 padding: '6px 12px',
@@ -203,6 +228,18 @@ export default function Shell({ activeTab, setActiveTab, children }) {
           {children}
         </main>
       </div>
+
+      {/* Logout Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showLogoutConfirm}
+        title="Sign Out Confirmation"
+        message="Are you sure you want to sign out of your PeoplePay360 session?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        confirmVariant="danger"
+        onConfirm={handleConfirmLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </div>
   );
 }

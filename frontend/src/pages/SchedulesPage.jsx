@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { useToast } from '../context/ToastContext';
 import { CalendarDays, Plus, Clock, Users } from 'lucide-react';
 
 export default function SchedulesPage() {
+  const toast = useToast();
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -30,9 +32,10 @@ export default function SchedulesPage() {
       await api.post('/schedules', { name, schedule_type: 'Full Time' });
       setShowModal(false);
       setName('');
+      toast.success('Working schedule created successfully.');
       fetchSchedules();
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to create schedule.');
     }
   };
 

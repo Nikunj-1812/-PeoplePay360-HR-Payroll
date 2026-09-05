@@ -5,12 +5,13 @@ import { Settings, Shield, User, Database, Server } from 'lucide-react';
 export default function SettingsPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedUser, setSelectedUser] = useState(null);
 
   useEffect(() => {
     async function fetchUsers() {
       try {
         setLoading(true);
-        const res = await api.get('/auth/users');
+        const res = await api.getFetch('/auth/users');
         setUsers(res.data || []);
       } catch (err) {
         console.error(err);
@@ -75,7 +76,7 @@ export default function SettingsPage() {
               </thead>
               <tbody>
                 {users.map(u => (
-                  <tr key={u.id}>
+                  <tr key={u.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedUser(u)}>
                     <td>#{u.id}</td>
                     <td style={{ fontWeight: '600' }}>{u.name}</td>
                     <td>{u.email}</td>
@@ -93,6 +94,32 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      {/* User Detail Modal */}
+      {selectedUser && (
+        <div className="modal-overlay" onClick={() => setSelectedUser(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">System User Details</h3>
+              <button onClick={() => setSelectedUser(null)} className="btn btn-secondary">✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '8px', fontSize: '13px' }}>
+                <div><strong>User ID:</strong> #{selectedUser.id}</div>
+                <div><strong>Employee Code:</strong> {selectedUser.emp_id || 'N/A'}</div>
+                <div style={{ gridColumn: 'span 2' }}><strong>Full Name:</strong> {selectedUser.name}</div>
+                <div style={{ gridColumn: 'span 2' }}><strong>Email Address:</strong> {selectedUser.email}</div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <strong>Assigned Role:</strong> <span className="badge badge-primary">{selectedUser.role.replace(/_/g, ' ').toUpperCase()}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setSelectedUser(null)} className="btn btn-secondary">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

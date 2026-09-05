@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { useToast } from '../context/ToastContext';
 import { Search, Plus, LayoutGrid, List, User, Mail, Phone, Building2, Briefcase, FileText, Clock, WalletCards, Receipt } from 'lucide-react';
 
 export default function EmployeesPage({ onNavigateTab }) {
+  const toast = useToast();
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('kanban');
@@ -19,7 +21,7 @@ export default function EmployeesPage({ onNavigateTab }) {
   const fetchEmployees = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/employees', { params: { search } });
+      const res = await api.getFetch('/employees', { params: { search } });
       setEmployees(res.data || []);
     } catch (err) {
       console.error(err);
@@ -34,10 +36,10 @@ export default function EmployeesPage({ onNavigateTab }) {
 
   const handleOpenDetail = async (id) => {
     try {
-      const res = await api.get(`/employees/${id}`);
+      const res = await api.getFetch(`/employees/${id}`);
       setSelectedEmp(res.data);
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to fetch employee detail.');
     }
   };
 
@@ -46,13 +48,16 @@ export default function EmployeesPage({ onNavigateTab }) {
     try {
       if (formData.id) {
         await api.put(`/employees/${formData.id}`, formData);
+        toast.success('Employee updated successfully.');
       } else {
         await api.post('/employees', formData);
+        toast.success('Employee created successfully.');
       }
+      api.invalidate(['employees', 'dashboard']);
       setShowFormModal(false);
       fetchEmployees();
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to save employee.');
     }
   };
 
