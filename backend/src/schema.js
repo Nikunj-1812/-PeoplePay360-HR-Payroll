@@ -248,6 +248,8 @@ async function initializeDatabase() {
   await seedData();
   await ensureDemoUsers();
   console.log('[DB] Seeding completed.');
+  const [firstUser] = await sql`SELECT * FROM users LIMIT 1`;
+  return firstUser;
 }
 
 async function ensureDemoUsers() {

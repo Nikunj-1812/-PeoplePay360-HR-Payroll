@@ -5,17 +5,52 @@ const dotenv = require('dotenv');
 if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
 }
-const { neon } = require('@neondatabase/serverless');
+const https = require('node:https');
+const { neon, neonConfig } = require('@neondatabase/serverless');
+
+neonConfig.fetchFunction = async (url, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = https.request(u, {
+      method: options.method || 'POST',
+      headers: options.headers || {},
+      family: 4
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          text: async () => data,
+          json: async () => JSON.parse(data),
+          headers: {
+            get: (h) => res.headers[h.toLowerCase()]
+          }
+        });
+      });
+    });
+    req.on('error', reject);
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+};
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-let sql;
+const rawDbUrl = (process.env.DATABASE_URL || '').trim();
 
-if (process.env.DATABASE_URL) {
-  const neonSql = neon(process.env.DATABASE_URL);
+if (rawDbUrl) {
+  const cleanDbUrl = rawDbUrl
+    .replace('-pooler.', '.')
+    .replace('&channel_binding=require', '')
+    .replace('?channel_binding=require', '');
+
+  const neonSql = neon(cleanDbUrl);
   
   const executeWithRetry = async (fn, retries = 3) => {
     for (let i = 0; i < retries; i++) {

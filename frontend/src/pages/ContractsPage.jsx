@@ -1,23 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
-import { FileText, Plus, CheckCircle, Clock } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { formatDate } from '../utils/dateUtils';
+import { FileText, Plus, CheckCircle, Clock, Search, Edit2 } from 'lucide-react';
 
 export default function ContractsPage() {
+  const { user } = useAuth();
+  const toast = useToast();
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedContract, setSelectedContract] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [employees, setEmployees] = useState([]);
-  const [structures, setStructures] = useState([]);
+  const [search, setSearch] = useState('');
 
   const [formData, setFormData] = useState({
     contract_number: '', employee_id: '1', start_date: '2026-01-01', end_date: '2027-12-31',
-    wage: 85000, salary_structure_id: '1', position: 'Software Engineer', employment_terms: 'Full Time Permanent'
+    wage: 85000, position: 'Software Engineer', employment_terms: 'Full Time Permanent'
   });
 
   const fetchContracts = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/contracts');
+      const res = await api.getFetch('/contracts');
       setContracts(res.data || []);
     } catch (err) {
       console.error(err);
@@ -28,43 +34,78 @@ export default function ContractsPage() {
 
   useEffect(() => {
     fetchContracts();
-    api.get('/employees').then(r => setEmployees(r.data || []));
-    api.get('/salary/structures').then(r => setStructures(r.data || []));
+    api.getFetch('/employees').then(r => setEmployees(r.data || []));
   }, []);
 
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
       await api.post('/contracts', formData);
+      api.invalidate(['contracts', 'employees', 'dashboard']);
       setShowModal(false);
+      toast.success('Contract created successfully.');
       fetchContracts();
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to create contract.');
     }
   };
 
+  const filteredContracts = contracts.filter(c => {
+    if (!search) return true;
+    const term = search.toLowerCase();
+    return (
+      (c.contract_number && c.contract_number.toLowerCase().includes(term)) ||
+      (c.employee_name && c.employee_name.toLowerCase().includes(term)) ||
+      (c.position && c.position.toLowerCase().includes(term))
+    );
+  });
+
+  const canManageContracts = ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'].includes(user?.role || 'admin');
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: '700' }}>Contract Management</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Historical employment terms & period-specific payroll mapping</p>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Historical employment terms & period-specific contract records</p>
         </div>
-        <button onClick={() => {
-          setFormData({
-            contract_number: `CNT-2026-00${contracts.length + 1}`,
-            employee_id: employees[0]?.id || '1',
-            start_date: '2026-01-01', end_date: '2027-12-31',
-            wage: 85000, salary_structure_id: structures[0]?.id || '1', position: 'Software Engineer', employment_terms: 'Full Time Permanent'
-          });
-          setShowModal(true);
-        }} className="btn btn-primary">
-          <Plus size={16} /> New Contract
-        </button>
+
+        {canManageContracts && (
+          <button onClick={() => {
+            setFormData({
+              contract_number: `CNT-2026-00${contracts.length + 1}`,
+              employee_id: employees[0]?.id || '1',
+              start_date: '2026-01-01', end_date: '2027-12-31',
+              wage: 85000, position: 'Software Engineer', employment_terms: 'Full Time Permanent'
+            });
+            setShowModal(true);
+          }} className="btn btn-primary">
+            <Plus size={16} /> New Contract
+          </button>
+        )}
+      </div>
+
+      {/* Filter Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ position: 'relative', flex: 1, maxWidth: '360px' }}>
+          <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '10px' }} />
+          <input
+            type="text"
+            placeholder="Search by contract #, employee, position..."
+            className="form-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ paddingLeft: '36px' }}
+          />
+        </div>
       </div>
 
       {loading ? (
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading historical contracts...</div>
+      ) : filteredContracts.length === 0 ? (
+        <div className="card" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          No employment contracts found.
+        </div>
       ) : (
         <div className="data-table-container">
           <table className="data-table">
@@ -76,24 +117,32 @@ export default function ContractsPage() {
                 <th>Start Date</th>
                 <th>End Date</th>
                 <th>Monthly Wage</th>
-                <th>Salary Structure</th>
                 <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {contracts.map(c => (
-                <tr key={c.id}>
+              {filteredContracts.map(c => (
+                <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedContract(c)}>
                   <td style={{ fontWeight: '600', color: 'var(--secondary-navy)' }}>{c.contract_number}</td>
                   <td style={{ fontWeight: '600' }}>{c.employee_name} ({c.emp_id})</td>
                   <td>{c.position || 'N/A'}</td>
-                  <td>{c.start_date}</td>
-                  <td>{c.end_date || 'Present / Ongoing'}</td>
+                  <td>{formatDate(c.start_date)}</td>
+                  <td>{c.end_date ? formatDate(c.end_date) : 'Present / Ongoing'}</td>
                   <td style={{ fontWeight: '700', color: 'var(--text-main)' }}>₹ {parseFloat(c.wage).toLocaleString('en-IN')}</td>
-                  <td>{c.salary_structure_name || 'Standard'}</td>
                   <td>
                     <span className={`badge ${c.status === 'Active' ? 'badge-active' : 'badge-danger'}`}>
                       {c.status === 'Active' ? <CheckCircle size={12} /> : <Clock size={12} />} {c.status}
                     </span>
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setSelectedContract(c)}
+                      className="btn btn-secondary"
+                      style={{ padding: '4px 8px', fontSize: '12px' }}
+                    >
+                      View Details
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -102,6 +151,34 @@ export default function ContractsPage() {
         </div>
       )}
 
+      {/* Contract Detail Modal */}
+      {selectedContract && (
+        <div className="modal-overlay" onClick={() => setSelectedContract(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '540px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Contract Details ({selectedContract.contract_number})</h3>
+              <button onClick={() => setSelectedContract(null)} className="btn btn-secondary">✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '8px', fontSize: '13px' }}>
+                <div><strong>Contract Number:</strong> {selectedContract.contract_number}</div>
+                <div><strong>Status:</strong> <span className={`badge ${selectedContract.status === 'Active' ? 'badge-active' : 'badge-danger'}`}>{selectedContract.status}</span></div>
+                <div><strong>Employee:</strong> {selectedContract.employee_name} ({selectedContract.emp_id})</div>
+                <div><strong>Position:</strong> {selectedContract.position || 'N/A'}</div>
+                <div><strong>Start Date:</strong> {formatDate(selectedContract.start_date)}</div>
+                <div><strong>End Date:</strong> {selectedContract.end_date ? formatDate(selectedContract.end_date) : 'Ongoing'}</div>
+                <div><strong>Monthly Wage:</strong> ₹ {parseFloat(selectedContract.wage).toLocaleString('en-IN')}</div>
+                <div><strong>Employment Terms:</strong> {selectedContract.employment_terms || 'Full Time Permanent'}</div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setSelectedContract(null)} className="btn btn-secondary">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Contract Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -131,17 +208,9 @@ export default function ContractsPage() {
                   <label className="form-label">End Date</label>
                   <input type="date" className="form-input" value={formData.end_date} onChange={(e) => setFormData({ ...formData, end_date: e.target.value })} />
                 </div>
-                <div className="form-group">
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label className="form-label">Monthly Gross Wage (INR)</label>
                   <input type="number" required className="form-input" value={formData.wage} onChange={(e) => setFormData({ ...formData, wage: parseFloat(e.target.value) })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Salary Structure</label>
-                  <select className="form-select" value={formData.salary_structure_id} onChange={(e) => setFormData({ ...formData, salary_structure_id: e.target.value })}>
-                    {structures.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
                 </div>
               </div>
 

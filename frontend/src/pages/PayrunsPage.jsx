@@ -1,16 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { useToast } from '../context/ToastContext';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { formatDate } from '../utils/dateUtils';
 import { 
   Receipt, Plus, Calculator, CheckCircle2, DollarSign, Mail, 
   AlertTriangle, FileText, ArrowRight, UserCheck, Download
 } from 'lucide-react';
 
 export default function PayrunsPage() {
+  const toast = useToast();
   const [payruns, setPayruns] = useState([]);
   const [selectedPayrun, setSelectedPayrun] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showWizard, setShowWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
+  const [selectedPayslip, setSelectedPayslip] = useState(null);
+
+  // Confirm dialog state
+  const [confirmConfig, setConfirmConfig] = useState(null);
 
   // Wizard Step 1 & 2 state
   const [structures, setStructures] = useState([]);
@@ -29,7 +37,7 @@ export default function PayrunsPage() {
   const fetchPayruns = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/payruns');
+      const res = await api.getFetch('/payruns');
       setPayruns(res.data || []);
       if (res.data?.length > 0 && !selectedPayrun) {
         handleSelectPayrun(res.data[0].id);
@@ -43,15 +51,15 @@ export default function PayrunsPage() {
 
   useEffect(() => {
     fetchPayruns();
-    api.get('/salary/structures').then(r => setStructures(r.data || []));
+    api.getFetch('/salary/structures').then(r => setStructures(r.data || []));
   }, []);
 
   const handleSelectPayrun = async (id) => {
     try {
-      const res = await api.get(`/payruns/${id}`);
+      const res = await api.getFetch(`/payruns/${id}`);
       setSelectedPayrun(res.data);
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to select payrun.');
     }
   };
 
@@ -59,19 +67,19 @@ export default function PayrunsPage() {
   const handleWizardContinue = async (e) => {
     e.preventDefault();
     try {
-      const res = await api.get('/payruns/eligible-employees', { params: step1Data });
+      const res = await api.getFetch('/payruns/eligible-employees', { params: step1Data });
       setEligibleEmployees(res.data || []);
       setSelectedEmpIds((res.data || []).map(emp => emp.id));
       setWizardStep(2);
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to fetch eligible employees.');
     }
   };
 
   // Step 2 -> Create Payrun
   const handleFinalCreatePayrun = async () => {
     if (selectedEmpIds.length === 0) {
-      alert('Please select at least one employee for the Payrun.');
+      toast.warning('Please select at least one employee for the Payrun.');
       return;
     }
     try {
@@ -79,43 +87,79 @@ export default function PayrunsPage() {
         ...step1Data,
         employee_ids: selectedEmpIds
       });
+      api.invalidate(['payruns', 'dashboard', 'employees']);
       setShowWizard(false);
       setWizardStep(1);
+      toast.success('Payrun created successfully!');
       fetchPayruns();
       handleSelectPayrun(res.data.id);
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message || 'Failed to create payrun.');
     }
   };
 
   // Payrun State Machine Actions
-  const handleCompute = async () => {
-    try {
-      await api.post(`/payruns/${selectedPayrun.id}/compute`);
-      handleSelectPayrun(selectedPayrun.id);
-    } catch (err) {
-      alert(err.message);
-    }
+  const handleCompute = () => {
+    setConfirmConfig({
+      title: 'Compute Payrun Batch',
+      description: `Are you sure you want to compute salary rules for ${selectedPayrun.name}? This will calculate earnings, deductions, gross and net pay for all included employees.`,
+      confirmText: 'Compute Now',
+      onConfirm: async () => {
+        try {
+          await api.post(`/payruns/${selectedPayrun.id}/compute`);
+          api.invalidate(['payruns', 'dashboard']);
+          toast.success('Payrun computed successfully!');
+          handleSelectPayrun(selectedPayrun.id);
+        } catch (err) {
+          toast.error(err.message || 'Failed to compute payrun.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
-  const handleUpdateStatus = async (status) => {
-    try {
-      await api.put(`/payruns/${selectedPayrun.id}/status`, { status });
-      handleSelectPayrun(selectedPayrun.id);
-    } catch (err) {
-      alert(err.message);
-    }
+  const handleUpdateStatus = (status) => {
+    setConfirmConfig({
+      title: `${status === 'Paid' ? 'Mark Payrun as Paid' : 'Validate Payrun'}`,
+      description: status === 'Paid'
+        ? 'Are you sure you want to mark this payrun as Paid? This will finalize the payroll batch.'
+        : 'Are you sure you want to mark this payrun as Validated?',
+      confirmText: status === 'Paid' ? 'Mark Paid' : 'Validate',
+      onConfirm: async () => {
+        try {
+          await api.put(`/payruns/${selectedPayrun.id}/status`, { status });
+          api.invalidate(['payruns', 'dashboard']);
+          toast.success(`Payrun status updated to ${status}.`);
+          handleSelectPayrun(selectedPayrun.id);
+        } catch (err) {
+          toast.error(err.message || 'Failed to update payrun status.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
-  const handleSendBulkEmail = async () => {
-    try {
-      const res = await api.post(`/payruns/${selectedPayrun.id}/send-payslips`);
-      setEmailReport(res.data);
-      alert(`Bulk Email Delivery Complete! Sent: ${res.data.sentCount}, Failed: ${res.data.failedCount}`);
-      handleSelectPayrun(selectedPayrun.id);
-    } catch (err) {
-      alert(err.message);
-    }
+  const handleSendBulkEmail = () => {
+    setConfirmConfig({
+      title: 'Send Payslips via Email',
+      description: `Are you sure you want to send payslips via email to all employees in ${selectedPayrun.name}?`,
+      confirmText: 'Send Bulk Email',
+      onConfirm: async () => {
+        try {
+          const res = await api.post(`/payruns/${selectedPayrun.id}/send-payslips`);
+          setEmailReport(res.data);
+          api.invalidate(['payruns', 'dashboard']);
+          toast.success(`Bulk Email Delivery Complete! Sent: ${res.data.sentCount}, Failed: ${res.data.failedCount}`);
+          handleSelectPayrun(selectedPayrun.id);
+        } catch (err) {
+          toast.error(err.message || 'Failed to send payslips.');
+        } finally {
+          setConfirmConfig(null);
+        }
+      }
+    });
   };
 
   return (
@@ -149,7 +193,9 @@ export default function PayrunsPage() {
                 }}
               >
                 <div style={{ fontWeight: '700', fontSize: '15px' }}>{pr.name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{pr.period_start} to {pr.period_end}</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {formatDate(pr.period_start)} to {formatDate(pr.period_end)}
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
                   <span style={{ fontSize: '12px', fontWeight: '700' }}>₹ {parseFloat(pr.total_net || 0).toLocaleString('en-IN')}</span>
                   <span className={`badge ${pr.status === 'Paid' ? 'badge-paid' : pr.status === 'Computed' ? 'badge-computed' : 'badge-warning'}`}>
@@ -171,7 +217,7 @@ export default function PayrunsPage() {
                     <span className={`badge ${selectedPayrun.status === 'Paid' ? 'badge-paid' : 'badge-warning'}`}>{selectedPayrun.status}</span>
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Structure: <strong>{selectedPayrun.salary_structure_name}</strong> | Period: {selectedPayrun.period_start} – {selectedPayrun.period_end} ({selectedPayrun.payslips?.length || 0} Employees)
+                    Structure: <strong>{selectedPayrun.salary_structure_name}</strong> | Period: {formatDate(selectedPayrun.period_start)} – {formatDate(selectedPayrun.period_end)} ({selectedPayrun.payslips?.length || 0} Employees)
                   </div>
                 </div>
 
@@ -235,19 +281,19 @@ export default function PayrunsPage() {
                         <th>Deductions</th>
                         <th>Net Pay</th>
                         <th>Status</th>
-                        <th>PDF</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {selectedPayrun.payslips?.map(s => (
-                        <tr key={s.id}>
+                        <tr key={s.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedPayslip(s)}>
                           <td style={{ fontWeight: '600' }}>{s.employee_name} ({s.emp_id})</td>
                           <td>{s.worked_days} days</td>
                           <td>₹ {parseFloat(s.gross_amount).toLocaleString('en-IN')}</td>
                           <td style={{ color: 'var(--danger)' }}>- ₹ {parseFloat(s.deduction_amount).toLocaleString('en-IN')}</td>
                           <td style={{ fontWeight: '700', color: '#10B981' }}>₹ {parseFloat(s.net_amount).toLocaleString('en-IN')}</td>
                           <td><span className="badge badge-active">{s.status}</span></td>
-                          <td>
+                          <td onClick={(e) => e.stopPropagation()}>
                             <a 
                               href={`http://localhost:5000/api/payslips/${s.id}/pdf`} 
                               target="_blank" 
@@ -266,6 +312,43 @@ export default function PayrunsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Payslip Detail Modal */}
+      {selectedPayslip && (
+        <div className="modal-overlay" onClick={() => setSelectedPayslip(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '580px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Payslip Detail ({selectedPayslip.employee_name})</h3>
+              <button onClick={() => setSelectedPayslip(null)} className="btn btn-secondary">✕</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: 'var(--surface)', padding: '16px', borderRadius: '8px', fontSize: '13px' }}>
+                <div><strong>Employee:</strong> {selectedPayslip.employee_name} ({selectedPayslip.emp_id})</div>
+                <div><strong>Period:</strong> {formatDate(selectedPayslip.period_start)} – {formatDate(selectedPayslip.period_end)}</div>
+                <div><strong>Worked Days:</strong> {selectedPayslip.worked_days} days</div>
+                <div><strong>Status:</strong> <span className="badge badge-active">{selectedPayslip.status}</span></div>
+                <div><strong>Gross Earnings:</strong> ₹ {parseFloat(selectedPayslip.gross_amount).toLocaleString('en-IN')}</div>
+                <div><strong>Deductions:</strong> - ₹ {parseFloat(selectedPayslip.deduction_amount).toLocaleString('en-IN')}</div>
+                <div style={{ gridColumn: 'span 2', fontSize: '16px', fontWeight: '700', color: '#10B981' }}>
+                  Net Salary Payable: ₹ {parseFloat(selectedPayslip.net_amount).toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <a 
+                  href={`http://localhost:5000/api/payslips/${selectedPayslip.id}/pdf`} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="btn btn-primary"
+                >
+                  <Download size={15} /> Download PDF Payslip
+                </a>
+                <button onClick={() => setSelectedPayslip(null)} className="btn btn-secondary">Close</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -353,6 +436,19 @@ export default function PayrunsPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmConfig && (
+        <ConfirmDialog
+          open={Boolean(confirmConfig)}
+          onClose={() => setConfirmConfig(null)}
+          onConfirm={confirmConfig.onConfirm}
+          title={confirmConfig.title}
+          description={confirmConfig.description}
+          confirmText={confirmConfig.confirmText}
+          variant={confirmConfig.variant || 'primary'}
+        />
       )}
     </div>
   );

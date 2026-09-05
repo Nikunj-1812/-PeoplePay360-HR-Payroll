@@ -52,8 +52,12 @@ router.post('/auth/switch-role', authenticateToken, asyncHandler(async (req, res
 // 2. DASHBOARD
 // ==========================================
 
-router.get('/dashboard', asyncHandler(async (req, res) => {
-  const data = await dashboardService.getDashboardData(req.query);
+router.get('/dashboard', authenticateToken, asyncHandler(async (req, res) => {
+  const query = { ...req.query };
+  if (req.user && req.user.role === 'employee') {
+    query.employee_id = req.user.employee_id;
+  }
+  const data = await dashboardService.getDashboardData(query);
   res.json({ success: true, data });
 }));
 
@@ -61,12 +65,19 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
 // 3. EMPLOYEES
 // ==========================================
 
-router.get('/employees', asyncHandler(async (req, res) => {
-  const employees = await employeeService.getEmployees(req.query);
+router.get('/employees', authenticateToken, asyncHandler(async (req, res) => {
+  const query = { ...req.query };
+  if (req.user && req.user.role === 'employee') {
+    query.id = req.user.employee_id;
+  }
+  const employees = await employeeService.getEmployees(query);
   res.json({ success: true, data: employees });
 }));
 
-router.get('/employees/:id', asyncHandler(async (req, res) => {
+router.get('/employees/:id', authenticateToken, asyncHandler(async (req, res) => {
+  if (req.user && req.user.role === 'employee' && String(req.user.employee_id) !== String(req.params.id)) {
+    return res.status(403).json({ success: false, message: 'Access denied to other employee profiles.' });
+  }
   const employee = await employeeService.getEmployeeById(req.params.id);
   res.json({ success: true, data: employee });
 }));
@@ -85,8 +96,12 @@ router.put('/employees/:id', authenticateToken, requireRole(['hr_manager', 'hr_p
 // 4. CONTRACTS
 // ==========================================
 
-router.get('/contracts', asyncHandler(async (req, res) => {
-  const contracts = await contractService.getContracts(req.query.employee_id);
+router.get('/contracts', authenticateToken, asyncHandler(async (req, res) => {
+  let empId = req.query.employee_id;
+  if (req.user && req.user.role === 'employee') {
+    empId = req.user.employee_id;
+  }
+  const contracts = await contractService.getContracts(empId);
   res.json({ success: true, data: contracts });
 }));
 
@@ -104,7 +119,7 @@ router.put('/contracts/:id', authenticateToken, requireRole(['hr_manager', 'hr_p
 // 5. WORKING SCHEDULES
 // ==========================================
 
-router.get('/schedules', asyncHandler(async (_req, res) => {
+router.get('/schedules', authenticateToken, asyncHandler(async (_req, res) => {
   const schedules = await scheduleService.getSchedules();
   res.json({ success: true, data: schedules });
 }));
@@ -118,24 +133,35 @@ router.post('/schedules', authenticateToken, requireRole(['hr_manager', 'hr_payr
 // 6. ATTENDANCE
 // ==========================================
 
-router.get('/attendance', asyncHandler(async (req, res) => {
-  const attendance = await attendanceService.getAttendance(req.query);
+router.get('/attendance', authenticateToken, asyncHandler(async (req, res) => {
+  const query = { ...req.query };
+  if (req.user && req.user.role === 'employee') {
+    query.employee_id = req.user.employee_id;
+  }
+  const attendance = await attendanceService.getAttendance(query);
   res.json({ success: true, data: attendance });
 }));
 
-router.post('/attendance/clock-in', authenticateToken, asyncHandler(async (req, res) => {
-  const empId = req.body.employee_id || req.user.employee_id;
+const handleCheckIn = asyncHandler(async (req, res) => {
+  const empId = req.body?.employee_id || req.user?.employee_id;
   if (!empId) return res.status(400).json({ success: false, message: 'Employee ID required' });
   const rec = await attendanceService.clockIn(empId);
   res.json({ success: true, data: rec });
-}));
+});
 
-router.post('/attendance/clock-out', authenticateToken, asyncHandler(async (req, res) => {
-  const empId = req.body.employee_id || req.user.employee_id;
+const handleCheckOut = asyncHandler(async (req, res) => {
+  const empId = req.body?.employee_id || req.user?.employee_id;
   if (!empId) return res.status(400).json({ success: false, message: 'Employee ID required' });
   const rec = await attendanceService.clockOut(empId);
   res.json({ success: true, data: rec });
-}));
+});
+
+router.post('/attendance/check-in', authenticateToken, handleCheckIn);
+router.post('/attendance/clock-in', authenticateToken, handleCheckIn);
+
+router.post('/attendance/check-out', authenticateToken, handleCheckOut);
+router.post('/attendance/clock-out', authenticateToken, handleCheckOut);
+
 
 router.put('/attendance/:id/correct', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const corrected = await attendanceService.correctAttendance(req.params.id, {
@@ -154,13 +180,21 @@ router.get('/time-off/types', asyncHandler(async (_req, res) => {
   res.json({ success: true, data: types });
 }));
 
-router.get('/time-off/allocations', asyncHandler(async (req, res) => {
-  const allocs = await timeOffService.getAllocations(req.query.employee_id);
+router.get('/time-off/allocations', authenticateToken, asyncHandler(async (req, res) => {
+  let empId = req.query.employee_id;
+  if (req.user && req.user.role === 'employee') {
+    empId = req.user.employee_id;
+  }
+  const allocs = await timeOffService.getAllocations(empId);
   res.json({ success: true, data: allocs });
 }));
 
-router.get('/time-off/requests', asyncHandler(async (req, res) => {
-  const requests = await timeOffService.getRequests(req.query);
+router.get('/time-off/requests', authenticateToken, asyncHandler(async (req, res) => {
+  const query = { ...req.query };
+  if (req.user && req.user.role === 'employee') {
+    query.employee_id = req.user.employee_id;
+  }
+  const requests = await timeOffService.getRequests(query);
   res.json({ success: true, data: requests });
 }));
 

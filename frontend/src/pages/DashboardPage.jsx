@@ -17,7 +17,7 @@ export default function DashboardPage() {
     async function fetchDashboard() {
       try {
         setLoading(true);
-        const res = await api.get('/dashboard', { params: { period, dept } });
+        const res = await api.getFetch('/dashboard', { params: { period, dept } });
         setData(res.data);
       } catch (err) {
         setError(err.message);
