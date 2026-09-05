@@ -1,9 +1,100 @@
-.neon
-.env.local
-.env
-
+# =========================
+# Dependencies
+# =========================
 node_modules/
+.pnpm-store/
+.yarn/
+.yarn-cache/
 
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+
+# Allow example env files
+!.env.example
+
+# =========================
+# Build / Production
+# =========================
 dist/
 build/
+out/
 .next/
+.vite/
+
+# =========================
+# Logs
+# =========================
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# =========================
+# Testing
+# =========================
+coverage/
+.nyc_output/
+
+# =========================
+# Cache
+# =========================
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+
+# =========================
+# Prisma
+# =========================
+prisma/*.db
+prisma/*.db-journal
+
+# =========================
+# Uploads / Generated Files
+# =========================
+uploads/
+temp/
+tmp/
+generated/
+generated-pdfs/
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# TypeScript
+# =========================
+*.tsbuildinfo
+
+# =========================
+# Vercel
+# =========================
+.vercel/
+
+# =========================
+# Misc
+# =========================
+*.pem
+*.key
+*.crt
