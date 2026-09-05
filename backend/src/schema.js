@@ -263,20 +263,26 @@ async function ensureDemoUsers() {
   const passPRUser = await bcrypt.hash('PayrollUser@123', 10);
   const passPRMgr = await bcrypt.hash('PayrollManager@123', 10);
   const passEmp = await bcrypt.hash('Employee@123', 10);
-  const passDefault = await bcrypt.hash('password123', 10);
 
-  await sql`
-    INSERT INTO users (name, email, password_hash, role, employee_id)
-    VALUES
-      ('Admin User', 'admin@peoplepay360.com', ${passAdmin}, 'admin', ${empId1}),
-      ('HR Payroll Manager', 'payrollmanager@peoplepay360.com', ${passPRMgr}, 'hr_payroll_manager', ${empId3}),
-      ('HR Payroll User', 'payrolluser@peoplepay360.com', ${passPRUser}, 'hr_payroll_user', ${empId3}),
-      ('HR Manager', 'hrmanager@peoplepay360.com', ${passHRMgr}, 'hr_manager', ${empId2}),
-      ('Employee User', 'employee@peoplepay360.com', ${passEmp}, 'employee', ${empId1}),
-      ('HR Payroll Manager (Alt)', 'payroll.manager@peoplepay360.com', ${passDefault}, 'hr_payroll_manager', ${empId3}),
-      ('HR Payroll User (Alt)', 'payroll.user@peoplepay360.com', ${passDefault}, 'hr_payroll_user', ${empId3})
-    ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, employee_id = EXCLUDED.employee_id
-  `;
+  const demoAccounts = [
+    { name: 'Admin User', email: 'admin@peoplepay360.com', hash: passAdmin, role: 'admin', empId: empId1 },
+    { name: 'HR Manager', email: 'hrmanager@peoplepay360.com', hash: passHRMgr, role: 'hr_manager', empId: empId2 },
+    { name: 'HR Payroll User', email: 'payrolluser@peoplepay360.com', hash: passPRUser, role: 'hr_payroll_user', empId: empId3 },
+    { name: 'HR Payroll Manager', email: 'payrollmanager@peoplepay360.com', hash: passPRMgr, role: 'hr_payroll_manager', empId: empId3 },
+    { name: 'Employee User', email: 'employee@peoplepay360.com', hash: passEmp, role: 'employee', empId: empId1 }
+  ];
+
+  for (const acc of demoAccounts) {
+    await sql`
+      INSERT INTO users (name, email, password_hash, role, employee_id)
+      VALUES (${acc.name}, ${acc.email}, ${acc.hash}, ${acc.role}, ${acc.empId})
+      ON CONFLICT (email) DO UPDATE SET
+        name = EXCLUDED.name,
+        password_hash = EXCLUDED.password_hash,
+        role = EXCLUDED.role,
+        employee_id = EXCLUDED.employee_id
+    `;
+  }
 }
 
 async function seedData() {
