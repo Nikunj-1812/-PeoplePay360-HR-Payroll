@@ -167,12 +167,22 @@ if (process.env.DATABASE_URL) {
         const tableName = match[1].toLowerCase();
         let rows = tables[tableName] ? [...tables[tableName]] : [];
 
-        // Simple filtering by ID/email if params passed
-        if (params.length > 0) {
-          if (typeof params[0] === 'number') {
-            rows = rows.filter(r => r.id === params[0]);
-          } else if (typeof params[0] === 'string') {
-            rows = rows.filter(r => r.email === params[0] || r.emp_id === params[0] || r.code === params[0]);
+        // Flexible filtering by ID / numeric string / string params
+        if (params.length > 0 && lower.includes('where')) {
+          const firstVal = params[0];
+          const numVal = Number(firstVal);
+
+          if (firstVal !== undefined && firstVal !== null && !isNaN(numVal) && String(firstVal).trim() !== '') {
+            rows = rows.filter(r => 
+              r.id === numVal || 
+              r.id === firstVal || 
+              r.salary_structure_id === numVal || 
+              r.employee_id === numVal || 
+              r.payrun_id === numVal || 
+              r.department_id === numVal
+            );
+          } else if (typeof firstVal === 'string') {
+            rows = rows.filter(r => r.email === firstVal || r.emp_id === firstVal || r.code === firstVal);
           }
         }
 

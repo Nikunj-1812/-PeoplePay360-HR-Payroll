@@ -79,9 +79,9 @@ async function generatePayslipPDF(payslipId) {
       // Table Rows
       for (const line of lines) {
         doc.font('Helvetica').fontSize(9).fillColor('#0A1931');
-        doc.text(line.rule_code, 50, y);
-        doc.text(line.rule_name, 130, y);
-        doc.text(line.category.toUpperCase(), 330, y);
+        doc.text((line.rule_code || ''), 50, y);
+        doc.text((line.rule_name || ''), 130, y);
+        doc.text(String(line.category || 'GENERAL').toUpperCase(), 330, y);
         doc.text(`₹ ${parseFloat(line.amount).toLocaleString('en-IN')}`, 450, y, { align: 'right' });
         y += 20;
       }

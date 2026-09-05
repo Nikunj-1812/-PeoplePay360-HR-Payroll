@@ -125,7 +125,7 @@ export default function SalaryStructuresPage() {
                         <td>{r.name}</td>
                         <td>
                           <span className={`badge ${r.category === 'gross' ? 'badge-primary' : r.category === 'net' ? 'badge-active' : r.category === 'deduction' ? 'badge-danger' : 'badge-warning'}`}>
-                            {r.category.toUpperCase()}
+                            {r.category ? String(r.category).toUpperCase() : 'GENERAL'}
                           </span>
                         </td>
                         <td style={{ textTransform: 'capitalize' }}>{r.computation_type}</td>

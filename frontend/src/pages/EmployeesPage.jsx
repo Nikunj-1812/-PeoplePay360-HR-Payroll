@@ -220,7 +220,7 @@ export default function EmployeesPage({ onNavigateTab }) {
                   EMPLOYEE OPERATIONAL HUB (SMART LINKS)
                 </h4>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
-                  <button 
+                  <button
                     onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('contracts'); }}
                     className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
                   >
@@ -228,7 +228,7 @@ export default function EmployeesPage({ onNavigateTab }) {
                     <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.contracts || 0} Contracts</span>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('attendance'); }}
                     className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
                   >
@@ -236,7 +236,7 @@ export default function EmployeesPage({ onNavigateTab }) {
                     <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.attendance || 0} Attendance</span>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('time-off'); }}
                     className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
                   >
@@ -244,7 +244,7 @@ export default function EmployeesPage({ onNavigateTab }) {
                     <span style={{ fontSize: '12px', fontWeight: '700' }}>{selectedEmp.smart_links?.time_off_requests || 0} Leave Requests</span>
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => { setSelectedEmp(null); if (onNavigateTab) onNavigateTab('payroll'); }}
                     className="btn btn-secondary" style={{ flexDirection: 'column', padding: '10px' }}
                   >
