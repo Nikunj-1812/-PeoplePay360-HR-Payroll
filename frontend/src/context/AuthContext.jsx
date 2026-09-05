@@ -1,35 +1,33 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../api/client';
-import { invalidateCache } from '../api/cache';
+import { clearAllCache } from '../api/cache';
 
 const AuthContext = createContext();
-
-const DEMO_CREDENTIALS = {
-  admin: { email: 'admin@peoplepay360.com', pass: 'Admin@123', label: 'Admin' },
-  hr_payroll_manager: { email: 'payrollmanager@peoplepay360.com', pass: 'PayrollManager@123', label: 'HR Payroll Manager' },
-  hr_payroll_user: { email: 'payrolluser@peoplepay360.com', pass: 'PayrollUser@123', label: 'HR Payroll User' },
-  hr_manager: { email: 'hrmanager@peoplepay360.com', pass: 'HRManager@123', label: 'HR Manager' },
-  employee: { email: 'employee@peoplepay360.com', pass: 'Employee@123', label: 'Employee' }
-};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [switchingRoleMsg, setSwitchingRoleMsg] = useState(null);
 
   useEffect(() => {
     async function loadUser() {
       const token = localStorage.getItem('pp360_token');
       if (token) {
         try {
+          // Verify user role directly from backend
           const res = await api.get('/auth/me');
-          setUser(res.data);
+          if (res && res.data) {
+            setUser(res.data);
+          } else {
+            throw new Error('Invalid user payload');
+          }
         } catch (err) {
-          console.warn('Auth token expired or invalid:', err.message);
+          console.warn('Auth session expired or invalid:', err.message);
           localStorage.removeItem('pp360_token');
+          clearAllCache();
           setUser(null);
         }
       } else {
+        clearAllCache();
         setUser(null);
       }
       setLoading(false);
@@ -38,7 +36,7 @@ export function AuthProvider({ children }) {
     loadUser();
 
     const handleUnauthorized = () => {
-      invalidateCache();
+      clearAllCache();
       setUser(null);
     };
 
@@ -47,40 +45,36 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (email, password) => {
-    invalidateCache();
-    const res = await api.post('/auth/login', { email, password });
-    localStorage.setItem('pp360_token', res.token);
-    setUser(res.user);
-    return res.user;
-  };
-
-  const switchRole = async (targetRole) => {
-    const creds = DEMO_CREDENTIALS[targetRole] || DEMO_CREDENTIALS.admin;
-    setSwitchingRoleMsg(`Switching demo account to ${creds.label}...`);
-    invalidateCache();
+    // Clear previous client cache on login
+    clearAllCache();
     
+    // Authenticate through backend
+    const res = await api.post('/auth/login', { email, password });
+    if (!res || !res.token || !res.user) {
+      throw new Error(res?.message || 'Authentication failed');
+    }
+
+    localStorage.setItem('pp360_token', res.token);
+
+    // Fetch authoritative backend user record
     try {
-      const res = await api.post('/auth/login', { email: creds.email, password: creds.pass });
-      localStorage.setItem('pp360_token', res.token);
+      const meRes = await api.get('/auth/me');
+      setUser(meRes.data || res.user);
+      return meRes.data || res.user;
+    } catch {
       setUser(res.user);
-      invalidateCache();
-      return { success: true, user: res.user, label: creds.label };
-    } catch (err) {
-      console.error('Demo account authentication failed:', err.message);
-      throw err;
-    } finally {
-      setSwitchingRoleMsg(null);
+      return res.user;
     }
   };
 
   const logout = () => {
     localStorage.removeItem('pp360_token');
-    invalidateCache();
+    clearAllCache();
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, switchingRoleMsg, login, switchRole, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

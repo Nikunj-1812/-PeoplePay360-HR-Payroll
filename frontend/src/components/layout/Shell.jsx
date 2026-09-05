@@ -10,14 +10,13 @@ import {
 } from 'lucide-react';
 
 export default function Shell({ activeTab, setActiveTab, children }) {
-  const { user, switchRole, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const toast = useToast();
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [switching, setSwitching] = useState(false);
 
-  // Role permissions filter
+  // Authoritative role from backend session
   const currentRole = user?.role || 'admin';
 
   const navItems = [
@@ -35,24 +34,28 @@ export default function Shell({ activeTab, setActiveTab, children }) {
     currentRole === 'admin' || item.roles.includes(currentRole)
   );
 
-  const handleRoleSelect = async (newRole) => {
-    if (switching) return;
-    try {
-      setSwitching(true);
-      const res = await switchRole(newRole);
-      toast.success(`Demo switched to ${res.label}`);
-    } catch (err) {
-      toast.error(err.message || 'Failed to switch demo account.');
-    } finally {
-      setSwitching(false);
-    }
-  };
-
   const handleConfirmLogout = () => {
     logout();
     toast.info('Logged out successfully.');
     setShowLogoutConfirm(false);
   };
+
+  const getRoleBadgeStyle = (role) => {
+    switch (role) {
+      case 'admin':
+        return { bg: 'rgba(239, 68, 68, 0.12)', text: '#EF4444', border: 'rgba(239, 68, 68, 0.3)' };
+      case 'hr_payroll_manager':
+        return { bg: 'rgba(59, 130, 246, 0.12)', text: '#3B82F6', border: 'rgba(59, 130, 246, 0.3)' };
+      case 'hr_payroll_user':
+        return { bg: 'rgba(16, 185, 129, 0.12)', text: '#10B981', border: 'rgba(16, 185, 129, 0.3)' };
+      case 'hr_manager':
+        return { bg: 'rgba(245, 158, 11, 0.12)', text: '#F59E0B', border: 'rgba(245, 158, 11, 0.3)' };
+      default:
+        return { bg: 'rgba(139, 92, 246, 0.12)', text: '#8B5CF6', border: 'rgba(139, 92, 246, 0.3)' };
+    }
+  };
+
+  const roleStyle = getRoleBadgeStyle(currentRole);
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--surface)' }}>
@@ -75,7 +78,7 @@ export default function Shell({ activeTab, setActiveTab, children }) {
           </div>
         </div>
 
-        {/* Nav list */}
+        {/* Navigation list */}
         <nav style={{ padding: '16px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
           {visibleNav.map((item) => {
             const Icon = item.icon;
@@ -107,7 +110,7 @@ export default function Shell({ activeTab, setActiveTab, children }) {
           })}
         </nav>
 
-        {/* Sidebar Footer / User Card */}
+        {/* User Card */}
         <div style={{
           padding: '16px',
           borderTop: '1px solid rgba(179, 207, 229, 0.12)',
@@ -121,7 +124,7 @@ export default function Shell({ activeTab, setActiveTab, children }) {
               {user?.name || 'Authorized User'}
             </div>
             <div style={{ fontSize: '11px', color: '#4A7FA7', marginTop: '2px', textTransform: 'capitalize' }}>
-              Role: {currentRole.replace(/_/g, ' ')}
+              {currentRole.replace(/_/g, ' ')}
             </div>
           </div>
           <button
@@ -157,38 +160,28 @@ export default function Shell({ activeTab, setActiveTab, children }) {
           justifyContent: 'space-between',
           padding: '0 24px'
         }}>
-          {/* Breadcrumb Context */}
+          {/* Breadcrumb */}
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: '500' }}>
             PeoplePay360 / <span style={{ color: 'var(--text-main)', fontWeight: '600', textTransform: 'capitalize' }}>{activeTab.replace('-', ' ')}</span>
           </div>
 
-          {/* Controls */}
+          {/* Header Controls */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {/* Quick Demo Role Switcher */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-              <ShieldCheck size={16} color="var(--secondary-blue)" />
-              <span style={{ fontWeight: '600', color: 'var(--text-muted)' }}>Role Demo:</span>
-              <select
-                value={currentRole}
-                disabled={switching}
-                onChange={(e) => handleRoleSelect(e.target.value)}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  border: '1px solid var(--border-color)',
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--text-main)',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  cursor: switching ? 'not-allowed' : 'pointer'
-                }}
-              >
-                <option value="admin">Admin</option>
-                <option value="hr_payroll_manager">HR Payroll Manager</option>
-                <option value="hr_payroll_user">HR Payroll User</option>
-                <option value="hr_manager">HR Manager</option>
-                <option value="employee">Employee</option>
-              </select>
+            {/* Read-only Verified Backend Role Badge */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              backgroundColor: roleStyle.bg,
+              border: `1px solid ${roleStyle.border}`,
+              color: roleStyle.text,
+              fontWeight: '600'
+            }}>
+              <ShieldCheck size={14} color={roleStyle.text} />
+              <span style={{ textTransform: 'capitalize' }}>{currentRole.replace(/_/g, ' ')}</span>
             </div>
 
             {/* Theme Toggle Button */}
