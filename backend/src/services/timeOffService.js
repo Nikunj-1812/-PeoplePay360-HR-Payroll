@@ -5,7 +5,7 @@ async function getTimeOffTypes() {
 }
 
 async function getAllocations(employeeId = null) {
-  let query = `
+  return await sql`
     SELECT 
       toa.*,
       e.first_name || ' ' || e.last_name as employee_name,
@@ -15,18 +15,13 @@ async function getAllocations(employeeId = null) {
     FROM time_off_allocations toa
     JOIN employees e ON toa.employee_id = e.id
     JOIN time_off_types tot ON toa.time_off_type_id = tot.id
+    WHERE (${employeeId ? parseInt(employeeId, 10) : null}::int IS NULL OR toa.employee_id = ${employeeId ? parseInt(employeeId, 10) : null})
+    ORDER BY toa.id DESC
   `;
-
-  if (employeeId) {
-    query += ` WHERE toa.employee_id = ${parseInt(employeeId, 10)}`;
-  }
-  query += ` ORDER BY toa.id DESC`;
-
-  return await sql.unsafe(query);
 }
 
 async function getRequests(filters = {}) {
-  let query = `
+  return await sql`
     SELECT 
       tor.*,
       e.first_name || ' ' || e.last_name as employee_name,
@@ -39,19 +34,10 @@ async function getRequests(filters = {}) {
     JOIN employees e ON tor.employee_id = e.id
     LEFT JOIN departments d ON e.department_id = d.id
     JOIN time_off_types tot ON tor.time_off_type_id = tot.id
-    WHERE 1=1
+    WHERE (${filters.employee_id ? parseInt(filters.employee_id, 10) : null}::int IS NULL OR tor.employee_id = ${filters.employee_id ? parseInt(filters.employee_id, 10) : null})
+      AND (${filters.status || null}::text IS NULL OR tor.status = ${filters.status || null})
+    ORDER BY tor.id DESC
   `;
-
-  if (filters.employee_id) {
-    query += ` AND tor.employee_id = ${parseInt(filters.employee_id, 10)}`;
-  }
-  if (filters.status) {
-    query += ` AND tor.status = '${filters.status}'`;
-  }
-
-  query += ` ORDER BY tor.id DESC`;
-
-  return await sql.unsafe(query);
 }
 
 async function createRequest(data) {
@@ -66,7 +52,6 @@ async function createRequest(data) {
 }
 
 async function approveRequest(id, approverName = 'HR Manager') {
-  // Fetch request & leave type info
   const requests = await sql`
     SELECT tor.*, tot.requires_allocation
     FROM time_off_requests tor
@@ -81,7 +66,6 @@ async function approveRequest(id, approverName = 'HR Manager') {
     throw new Error(`Cannot approve request in status '${req.status}'`);
   }
 
-  // Deduct allocation if required
   if (req.requires_allocation) {
     const allocations = await sql`
       SELECT * FROM time_off_allocations

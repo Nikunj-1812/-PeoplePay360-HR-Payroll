@@ -1,7 +1,7 @@
 const { sql } = require('../db');
 
 async function getAttendance(filters = {}) {
-  let query = `
+  return await sql`
     SELECT 
       a.*,
       e.first_name || ' ' || e.last_name as employee_name,
@@ -10,22 +10,11 @@ async function getAttendance(filters = {}) {
     FROM attendance a
     JOIN employees e ON a.employee_id = e.id
     LEFT JOIN departments d ON e.department_id = d.id
-    WHERE 1=1
+    WHERE (${filters.employee_id ? parseInt(filters.employee_id, 10) : null}::int IS NULL OR a.employee_id = ${filters.employee_id ? parseInt(filters.employee_id, 10) : null})
+      AND (${filters.date || null}::text IS NULL OR a.date = ${filters.date || null}::date)
+      AND (${filters.status || null}::text IS NULL OR a.status = ${filters.status || null})
+    ORDER BY a.date DESC, a.id DESC
   `;
-
-  if (filters.employee_id) {
-    query += ` AND a.employee_id = ${parseInt(filters.employee_id, 10)}`;
-  }
-  if (filters.date) {
-    query += ` AND a.date = '${filters.date}'`;
-  }
-  if (filters.status) {
-    query += ` AND a.status = '${filters.status}'`;
-  }
-
-  query += ` ORDER BY a.date DESC, a.id DESC`;
-
-  return await sql.unsafe(query);
 }
 
 async function clockIn(employeeId) {

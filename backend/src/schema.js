@@ -80,7 +80,6 @@ async function initializeDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
-  // Add columns if table pre-existed
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL`;
 
@@ -275,207 +274,227 @@ async function ensureDemoUsers() {
       ('HR Manager', 'hrmanager@peoplepay360.com', ${passHRMgr}, 'hr_manager', ${empId2}),
       ('Employee User', 'employee@peoplepay360.com', ${passEmp}, 'employee', ${empId1}),
       ('HR Payroll Manager (Alt)', 'payroll.manager@peoplepay360.com', ${passDefault}, 'hr_payroll_manager', ${empId3}),
-      ('HR Payroll User (Alt)', 'payroll.user@peoplepay360.com', ${passDefault}, 'payroll.user@peoplepay360.com' ? ${passDefault} : ${passDefault}, ${empId3})
+      ('HR Payroll User (Alt)', 'payroll.user@peoplepay360.com', ${passDefault}, 'hr_payroll_user', ${empId3})
     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, employee_id = EXCLUDED.employee_id
   `;
 }
 
 async function seedData() {
-  const existingDepts = await sql`SELECT count(*)::int FROM departments`;
-  if (existingDepts[0].count > 0) {
-    console.log('[DB] Data already seeded.');
-    return;
-  }
+  console.log('[DB] Running seedData check...');
 
   // 1. Departments
-  const depts = await sql`
-    INSERT INTO departments (name, code)
-    VALUES 
-      ('Engineering', 'ENG'),
-      ('Human Resources', 'HR'),
-      ('Finance', 'FIN'),
-      ('Marketing & Sales', 'MKT')
-    RETURNING id, code
-  `;
-  const engId = depts.find(d => d.code === 'ENG').id;
-  const hrId = depts.find(d => d.code === 'HR').id;
-  const finId = depts.find(d => d.code === 'FIN').id;
-  const mktId = depts.find(d => d.code === 'MKT').id;
+  let engId, hrId, finId, mktId;
+  const existingDepts = await sql`SELECT id, code FROM departments`;
+  if (existingDepts.length === 0) {
+    const depts = await sql`
+      INSERT INTO departments (name, code)
+      VALUES 
+        ('Engineering', 'ENG'),
+        ('Human Resources', 'HR'),
+        ('Finance', 'FIN'),
+        ('Marketing & Sales', 'MKT')
+      RETURNING id, code
+    `;
+    engId = depts.find(d => d.code === 'ENG').id;
+    hrId = depts.find(d => d.code === 'HR').id;
+    finId = depts.find(d => d.code === 'FIN').id;
+    mktId = depts.find(d => d.code === 'MKT').id;
+  } else {
+    engId = existingDepts.find(d => d.code === 'ENG')?.id || existingDepts[0].id;
+    hrId = existingDepts.find(d => d.code === 'HR')?.id || existingDepts[0].id;
+    finId = existingDepts.find(d => d.code === 'FIN')?.id || existingDepts[0].id;
+    mktId = existingDepts.find(d => d.code === 'MKT')?.id || existingDepts[0].id;
+  }
 
   // 2. Working Schedule
-  const [schedule] = await sql`
-    INSERT INTO working_schedules (name, schedule_type, weekly_hours)
-    VALUES ('Standard 40h Weekly Pattern', 'Full Time', 40.0)
-    RETURNING id
-  `;
+  const existingSched = await sql`SELECT id FROM working_schedules LIMIT 1`;
+  let scheduleId;
+  if (existingSched.length === 0) {
+    const [sched] = await sql`
+      INSERT INTO working_schedules (name, schedule_type, weekly_hours)
+      VALUES ('Standard 40h Weekly Pattern', 'Full Time', 40.0)
+      RETURNING id
+    `;
+    scheduleId = sched.id;
+  } else {
+    scheduleId = existingSched[0].id;
+  }
 
   // 3. Employees
-  const empRecords = await sql`
-    INSERT INTO employees 
-      (emp_id, first_name, last_name, email, phone, department_id, schedule_id, job_position, status, bank_name, account_number, ifsc_code)
-    VALUES
-      ('EMP001', 'Aarav', 'Sharma', 'aarav.sharma@peoplepay360.com', '+91 9876543210', ${engId}, ${schedule.id}, 'Senior Software Engineer', 'Active', 'HDFC Bank', '50100234567891', 'HDFC0001234'),
-      ('EMP002', 'Priya', 'Patel', 'priya.patel@peoplepay360.com', '+91 9876543211', ${hrId}, ${schedule.id}, 'HR Lead', 'Active', 'ICICI Bank', '000401567892', 'ICIC0000004'),
-      ('EMP003', 'Rohan', 'Verma', 'rohan.verma@peoplepay360.com', '+91 9876543212', ${finId}, ${schedule.id}, 'Payroll Specialist', 'Active', 'State Bank of India', '30987654321', 'SBIN0000123'),
-      ('EMP004', 'Ananya', 'Iyer', 'ananya.iyer@peoplepay360.com', '+91 9876543213', ${mktId}, ${schedule.id}, 'Marketing Manager', 'Active', 'Axis Bank', '915010045678901', 'UTIB0000250'),
-      ('EMP005', 'Vikram', 'Singh', 'vikram.singh@peoplepay360.com', '+91 9876543214', ${engId}, ${schedule.id}, 'DevOps Engineer', 'Active', 'HDFC Bank', '50100987654321', 'HDFC0001234')
-    RETURNING id, emp_id, first_name, last_name, email
-  `;
-
-  const emp1 = empRecords.find(e => e.emp_id === 'EMP001');
-  const emp2 = empRecords.find(e => e.emp_id === 'EMP002');
-  const emp3 = empRecords.find(e => e.emp_id === 'EMP003');
-  const emp4 = empRecords.find(e => e.emp_id === 'EMP004');
-  const emp5 = empRecords.find(e => e.emp_id === 'EMP005');
-
-  // 4. Default Users (Role Accounts - Exact required demo accounts)
-  const passAdmin = await bcrypt.hash('Admin@123', 10);
-  const passHRMgr = await bcrypt.hash('HRManager@123', 10);
-  const passPRUser = await bcrypt.hash('PayrollUser@123', 10);
-  const passPRMgr = await bcrypt.hash('PayrollManager@123', 10);
-  const passEmp = await bcrypt.hash('Employee@123', 10);
-  const passDefault = await bcrypt.hash('password123', 10);
-  
-  // Clean up legacy test users
-  await sql`DELETE FROM users WHERE email = 'test.user@oodo.local'`;
-
-  await sql`
-    INSERT INTO users (name, email, password_hash, role, employee_id)
-    VALUES
-      ('Admin User', 'admin@peoplepay360.com', ${passAdmin}, 'admin', ${emp1.id}),
-      ('HR Payroll Manager', 'payrollmanager@peoplepay360.com', ${passPRMgr}, 'hr_payroll_manager', ${emp3.id}),
-      ('HR Payroll User', 'payrolluser@peoplepay360.com', ${passPRUser}, 'hr_payroll_user', ${emp3.id}),
-      ('HR Manager', 'hrmanager@peoplepay360.com', ${passHRMgr}, 'hr_manager', ${emp2.id}),
-      ('Employee User', 'employee@peoplepay360.com', ${passEmp}, 'employee', ${emp1.id}),
-      ('HR Payroll Manager (Alt)', 'payroll.manager@peoplepay360.com', ${passDefault}, 'hr_payroll_manager', ${emp3.id}),
-      ('HR Payroll User (Alt)', 'payroll.user@peoplepay360.com', ${passDefault}, 'hr_payroll_user', ${emp3.id}),
-      ('HR Manager (Alt)', 'hr.manager@peoplepay360.com', ${passDefault}, 'hr_manager', ${emp2.id}),
-      ('Aarav Sharma (Employee Alt)', 'aarav.sharma@peoplepay360.com', ${passDefault}, 'employee', ${emp1.id})
-    ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, employee_id = EXCLUDED.employee_id
-  `;
-
-  // 5. Salary Structures & Rules
-  const [salStruct] = await sql`
-    INSERT INTO salary_structures (name, description, is_active)
-    VALUES ('Standard Regular Salary', 'Default salary structure for permanent employees in India', true)
-    RETURNING id
-  `;
-
-  await sql`
-    INSERT INTO salary_rules (salary_structure_id, name, code, category, sequence, computation_type, amount, percentage, percentage_based_on)
-    VALUES
-      (${salStruct.id}, 'Basic Salary', 'BASIC', 'basic', 10, 'percentage', 0, 50.00, 'WAGE'),
-      (${salStruct.id}, 'House Rent Allowance (HRA)', 'HRA', 'allowance', 20, 'percentage', 0, 40.00, 'BASIC'),
-      (${salStruct.id}, 'Special Allowance', 'SPECIAL_ALLOW', 'allowance', 30, 'percentage', 0, 10.00, 'WAGE'),
-      (${salStruct.id}, 'Gross Salary', 'GROSS', 'gross', 40, 'formula', 0, 0, 'BASIC + HRA + SPECIAL_ALLOW'),
-      (${salStruct.id}, 'Provident Fund (PF)', 'PF', 'deduction', 50, 'percentage', 0, 12.00, 'BASIC'),
-      (${salStruct.id}, 'Professional Tax (PT)', 'PT', 'deduction', 60, 'fixed', 200, 0, ''),
-      (${salStruct.id}, 'Net Salary', 'NET', 'net', 100, 'formula', 0, 0, 'GROSS - PF - PT')
-  `;
-
-  // 6. Contracts
-  await sql`
-    INSERT INTO contracts (contract_number, employee_id, start_date, end_date, wage, salary_structure_id, department_id, position, status, employment_terms)
-    VALUES
-      ('CNT-2026-001', ${emp1.id}, '2026-01-01', '2027-12-31', 95000.00, ${salStruct.id}, ${engId}, 'Senior Software Engineer', 'Active', 'Full Time Permanent'),
-      ('CNT-2026-002', ${emp2.id}, '2026-01-01', '2027-12-31', 85000.00, ${salStruct.id}, ${hrId}, 'HR Lead', 'Active', 'Full Time Permanent'),
-      ('CNT-2026-003', ${emp3.id}, '2026-01-01', '2027-12-31', 78000.00, ${salStruct.id}, ${finId}, 'Payroll Specialist', 'Active', 'Full Time Permanent'),
-      ('CNT-2026-004', ${emp4.id}, '2026-01-01', '2027-12-31', 80000.00, ${salStruct.id}, ${mktId}, 'Marketing Manager', 'Active', 'Full Time Permanent'),
-      ('CNT-2026-005', ${emp5.id}, '2026-01-01', '2027-12-31', 90000.00, ${salStruct.id}, ${engId}, 'DevOps Engineer', 'Active', 'Full Time Permanent')
-  `;
-
-  // Historical Contract for EMP001
-  await sql`
-    INSERT INTO contracts (contract_number, employee_id, start_date, end_date, wage, salary_structure_id, department_id, position, status, employment_terms)
-    VALUES
-      ('CNT-2025-001', ${emp1.id}, '2025-01-01', '2025-12-31', 75000.00, ${salStruct.id}, ${engId}, 'Software Engineer', 'Expired', 'Full Time Permanent - Past Year')
-  `;
-
-  // 7. Time Off Types
-  const leaveTypes = await sql`
-    INSERT INTO time_off_types (name, unit, requires_allocation, approval_workflow, payroll_integration)
-    VALUES
-      ('Paid Leave / Privilege Leave', 'days', true, 'Manager', true),
-      ('Sick Leave', 'days', true, 'Manager', true),
-      ('Casual Leave', 'days', true, 'Manager', true),
-      ('Unpaid Leave', 'days', false, 'Manager', true)
-    RETURNING id, name
-  `;
-  const plId = leaveTypes[0].id;
-  const slId = leaveTypes[1].id;
-
-  // 8. Time Off Allocations
-  for (const emp of empRecords) {
-    await sql`
-      INSERT INTO time_off_allocations (employee_id, time_off_type_id, allocated_days, taken_days, remaining_days, validity_start, validity_end, status)
+  const existingEmps = await sql`SELECT id, emp_id, first_name, last_name, email FROM employees`;
+  let empRecords = existingEmps;
+  if (existingEmps.length === 0) {
+    empRecords = await sql`
+      INSERT INTO employees 
+        (emp_id, first_name, last_name, email, phone, department_id, schedule_id, job_position, status, bank_name, account_number, ifsc_code)
       VALUES
-        (${emp.id}, ${plId}, 15.0, 2.0, 13.0, '2026-01-01', '2026-12-31', 'Approved'),
-        (${emp.id}, ${slId}, 10.0, 1.0, 9.0, '2026-01-01', '2026-12-31', 'Approved')
+        ('EMP001', 'Aarav', 'Sharma', 'aarav.sharma@peoplepay360.com', '+91 9876543210', ${engId}, ${scheduleId}, 'Senior Software Engineer', 'Active', 'HDFC Bank', '50100234567891', 'HDFC0001234'),
+        ('EMP002', 'Priya', 'Patel', 'priya.patel@peoplepay360.com', '+91 9876543211', ${hrId}, ${scheduleId}, 'HR Lead', 'Active', 'ICICI Bank', '000401567892', 'ICIC0000004'),
+        ('EMP003', 'Rohan', 'Verma', 'rohan.verma@peoplepay360.com', '+91 9876543212', ${finId}, ${scheduleId}, 'Payroll Specialist', 'Active', 'State Bank of India', '30987654321', 'SBIN0000123'),
+        ('EMP004', 'Ananya', 'Iyer', 'ananya.iyer@peoplepay360.com', '+91 9876543213', ${mktId}, ${scheduleId}, 'Marketing Manager', 'Active', 'Axis Bank', '915010045678901', 'UTIB0000250'),
+        ('EMP005', 'Vikram', 'Singh', 'vikram.singh@peoplepay360.com', '+91 9876543214', ${engId}, ${scheduleId}, 'DevOps Engineer', 'Active', 'HDFC Bank', '50100987654321', 'HDFC0001234')
+      ON CONFLICT (emp_id) DO NOTHING
+      RETURNING id, emp_id, first_name, last_name, email
+    `;
+    if (!empRecords || empRecords.length === 0) {
+      empRecords = await sql`SELECT id, emp_id, first_name, last_name, email FROM employees`;
+    }
+  }
+
+  const emp1 = empRecords.find(e => e.emp_id === 'EMP001') || empRecords[0];
+  const emp2 = empRecords.find(e => e.emp_id === 'EMP002') || empRecords[0];
+  const emp3 = empRecords.find(e => e.emp_id === 'EMP003') || empRecords[0];
+  const emp4 = empRecords.find(e => e.emp_id === 'EMP004') || empRecords[0];
+  const emp5 = empRecords.find(e => e.emp_id === 'EMP005') || empRecords[0];
+
+  // 4. Salary Structures & Rules
+  let salStructId;
+  const existingStructs = await sql`SELECT id FROM salary_structures LIMIT 1`;
+  if (existingStructs.length === 0) {
+    const [salStruct] = await sql`
+      INSERT INTO salary_structures (name, description, is_active)
+      VALUES ('Standard Regular Salary', 'Default salary structure for permanent employees in India', true)
+      RETURNING id
+    `;
+    salStructId = salStruct.id;
+
+    await sql`
+      INSERT INTO salary_rules (salary_structure_id, name, code, category, sequence, computation_type, amount, percentage, percentage_based_on)
+      VALUES
+        (${salStructId}, 'Basic Salary', 'BASIC', 'basic', 10, 'percentage', 0, 50.00, 'WAGE'),
+        (${salStructId}, 'House Rent Allowance (HRA)', 'HRA', 'allowance', 20, 'percentage', 0, 40.00, 'BASIC'),
+        (${salStructId}, 'Special Allowance', 'SPECIAL_ALLOW', 'allowance', 30, 'percentage', 0, 10.00, 'WAGE'),
+        (${salStructId}, 'Gross Salary', 'GROSS', 'gross', 40, 'formula', 0, 0, 'BASIC + HRA + SPECIAL_ALLOW'),
+        (${salStructId}, 'Provident Fund (PF)', 'PF', 'deduction', 50, 'percentage', 0, 12.00, 'BASIC'),
+        (${salStructId}, 'Professional Tax (PT)', 'PT', 'deduction', 60, 'fixed', 200, 0, ''),
+        (${salStructId}, 'Net Salary', 'NET', 'net', 100, 'formula', 0, 0, 'GROSS - PF - PT')
+    `;
+  } else {
+    salStructId = existingStructs[0].id;
+  }
+
+  // 5. Contracts
+  const existingContracts = await sql`SELECT id FROM contracts LIMIT 1`;
+  if (existingContracts.length === 0) {
+    await sql`
+      INSERT INTO contracts (contract_number, employee_id, start_date, end_date, wage, salary_structure_id, department_id, position, status, employment_terms)
+      VALUES
+        ('CNT-2026-001', ${emp1.id}, '2026-01-01', '2027-12-31', 95000.00, ${salStructId}, ${engId}, 'Senior Software Engineer', 'Active', 'Full Time Permanent'),
+        ('CNT-2026-002', ${emp2.id}, '2026-01-01', '2027-12-31', 85000.00, ${salStructId}, ${hrId}, 'HR Lead', 'Active', 'Full Time Permanent'),
+        ('CNT-2026-003', ${emp3.id}, '2026-01-01', '2027-12-31', 78000.00, ${salStructId}, ${finId}, 'Payroll Specialist', 'Active', 'Full Time Permanent'),
+        ('CNT-2026-004', ${emp4.id}, '2026-01-01', '2027-12-31', 80000.00, ${salStructId}, ${mktId}, 'Marketing Manager', 'Active', 'Full Time Permanent'),
+        ('CNT-2026-005', ${emp5.id}, '2026-01-01', '2027-12-31', 90000.00, ${salStructId}, ${engId}, 'DevOps Engineer', 'Active', 'Full Time Permanent'),
+        ('CNT-2025-001', ${emp1.id}, '2025-01-01', '2025-12-31', 75000.00, ${salStructId}, ${engId}, 'Software Engineer', 'Expired', 'Full Time Permanent - Past Year')
+      ON CONFLICT (contract_number) DO NOTHING
     `;
   }
 
-  // 9. Time Off Requests
-  await sql`
-    INSERT INTO time_off_requests (employee_id, time_off_type_id, start_date, end_date, duration, status, reason, approved_by)
-    VALUES
-      (${emp1.id}, ${plId}, '2026-08-10', '2026-08-12', 2.0, 'Approved', 'Family function', 'Priya Patel'),
-      (${emp4.id}, ${slId}, '2026-08-25', '2026-08-25', 1.0, 'Approved', 'Fever & medical rest', 'Priya Patel'),
-      (${emp5.id}, ${plId}, '2026-09-15', '2026-09-18', 3.0, 'Pending', 'Vacation travel', NULL)
-  `;
+  // 6. Time Off Types
+  const existingTypes = await sql`SELECT id, name FROM time_off_types`;
+  let plId, slId;
+  if (existingTypes.length === 0) {
+    const leaveTypes = await sql`
+      INSERT INTO time_off_types (name, unit, requires_allocation, approval_workflow, payroll_integration)
+      VALUES
+        ('Paid Leave / Privilege Leave', 'days', true, 'Manager', true),
+        ('Sick Leave', 'days', true, 'Manager', true),
+        ('Casual Leave', 'days', true, 'Manager', true),
+        ('Unpaid Leave', 'days', false, 'Manager', true)
+      RETURNING id, name
+    `;
+    plId = leaveTypes[0].id;
+    slId = leaveTypes[1].id;
+  } else {
+    plId = existingTypes[0].id;
+    slId = existingTypes[1] ? existingTypes[1].id : existingTypes[0].id;
+  }
 
-  // 10. Attendance Records
-  const dates = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04'];
-  for (const dateStr of dates) {
+  // 7. Time Off Allocations
+  const existingAllocations = await sql`SELECT id FROM time_off_allocations LIMIT 1`;
+  if (existingAllocations.length === 0) {
     for (const emp of empRecords) {
-      if (emp.emp_id === 'EMP005' && dateStr === '2026-09-04') {
-        await sql`
-          INSERT INTO attendance (employee_id, date, check_in, check_out, worked_hours, status, exception_note)
-          VALUES (${emp.id}, ${dateStr}, ${dateStr + 'T09:05:00Z'}, NULL, 0, 'Missing Checkout', 'Forgot to check out')
-        `;
-      } else {
-        await sql`
-          INSERT INTO attendance (employee_id, date, check_in, check_out, worked_hours, status)
-          VALUES (${emp.id}, ${dateStr}, ${dateStr + 'T09:00:00Z'}, ${dateStr + 'T18:00:00Z'}, 8.0, 'Present')
-        `;
+      await sql`
+        INSERT INTO time_off_allocations (employee_id, time_off_type_id, allocated_days, taken_days, remaining_days, validity_start, validity_end, status)
+        VALUES
+          (${emp.id}, ${plId}, 15.0, 2.0, 13.0, '2026-01-01', '2026-12-31', 'Approved'),
+          (${emp.id}, ${slId}, 10.0, 1.0, 9.0, '2026-01-01', '2026-12-31', 'Approved')
+      `;
+    }
+  }
+
+  // 8. Time Off Requests
+  const existingRequests = await sql`SELECT id FROM time_off_requests LIMIT 1`;
+  if (existingRequests.length === 0) {
+    await sql`
+      INSERT INTO time_off_requests (employee_id, time_off_type_id, start_date, end_date, duration, status, reason, approved_by)
+      VALUES
+        (${emp1.id}, ${plId}, '2026-08-10', '2026-08-12', 2.0, 'Approved', 'Family function', 'Priya Patel'),
+        (${emp4.id}, ${slId}, '2026-08-25', '2026-08-25', 1.0, 'Approved', 'Fever & medical rest', 'Priya Patel'),
+        (${emp5.id}, ${plId}, '2026-09-15', '2026-09-18', 3.0, 'Pending', 'Vacation travel', NULL)
+    `;
+  }
+
+  // 9. Attendance Records
+  const existingAtt = await sql`SELECT id FROM attendance LIMIT 1`;
+  if (existingAtt.length === 0) {
+    const dates = ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04'];
+    for (const dateStr of dates) {
+      for (const emp of empRecords) {
+        if (emp.emp_id === 'EMP005' && dateStr === '2026-09-04') {
+          await sql`
+            INSERT INTO attendance (employee_id, date, check_in, check_out, worked_hours, status, exception_note)
+            VALUES (${emp.id}, ${dateStr}, ${dateStr + 'T09:05:00Z'}, NULL, 0, 'Missing Checkout', 'Forgot to check out')
+            ON CONFLICT (employee_id, date) DO NOTHING
+          `;
+        } else {
+          await sql`
+            INSERT INTO attendance (employee_id, date, check_in, check_out, worked_hours, status)
+            VALUES (${emp.id}, ${dateStr}, ${dateStr + 'T09:00:00Z'}, ${dateStr + 'T18:00:00Z'}, 8.0, 'Present')
+            ON CONFLICT (employee_id, date) DO NOTHING
+          `;
+        }
       }
     }
   }
 
-  // 11. Initial Past Payrun (August 2026)
-  const [pastPayrun] = await sql`
-    INSERT INTO payruns (name, salary_structure_id, period_start, period_end, status, total_net, total_gross, payslip_count)
-    VALUES ('August 2026 Payroll', ${salStruct.id}, '2026-08-01', '2026-08-31', 'Paid', 335000.00, 428000.00, 5)
-    RETURNING id
-  `;
-
-  for (const emp of empRecords) {
-    const wage = emp.emp_id === 'EMP001' ? 95000 : emp.emp_id === 'EMP005' ? 90000 : 80000;
-    const basic = wage * 0.5;
-    const hra = basic * 0.4;
-    const special = wage * 0.1;
-    const gross = basic + hra + special;
-    const pf = basic * 0.12;
-    const pt = 200;
-    const deductions = pf + pt;
-    const net = gross - deductions;
-
-    const [slip] = await sql`
-      INSERT INTO payslips (payrun_id, employee_id, period_start, period_end, worked_days, gross_amount, deduction_amount, net_amount, status)
-      VALUES (${pastPayrun.id}, ${emp.id}, '2026-08-01', '2026-08-31', 30, ${gross}, ${deductions}, ${net}, 'Sent')
+  // 10. Initial Past Payrun (August 2026)
+  const existingPayruns = await sql`SELECT id FROM payruns LIMIT 1`;
+  if (existingPayruns.length === 0) {
+    const [pastPayrun] = await sql`
+      INSERT INTO payruns (name, salary_structure_id, period_start, period_end, status, total_net, total_gross, payslip_count)
+      VALUES ('August 2026 Payroll', ${salStructId}, '2026-08-01', '2026-08-31', 'Paid', 335000.00, 428000.00, 5)
       RETURNING id
     `;
 
-    await sql`
-      INSERT INTO payslip_lines (payslip_id, rule_code, rule_name, category, sequence, amount)
-      VALUES
-        (${slip.id}, 'BASIC', 'Basic Salary', 'basic', 10, ${basic}),
-        (${slip.id}, 'HRA', 'House Rent Allowance (HRA)', 'allowance', 20, ${hra}),
-        (${slip.id}, 'SPECIAL_ALLOW', 'Special Allowance', 'allowance', 30, ${special}),
-        (${slip.id}, 'GROSS', 'Gross Salary', 'gross', 40, ${gross}),
-        (${slip.id}, 'PF', 'Provident Fund (PF)', 'deduction', 50, ${pf}),
-        (${slip.id}, 'PT', 'Professional Tax (PT)', 'deduction', 60, ${pt}),
-        (${slip.id}, 'NET', 'Net Salary', 'net', 100, ${net})
-    `;
+    for (const emp of empRecords) {
+      const wage = emp.emp_id === 'EMP001' ? 95000 : emp.emp_id === 'EMP005' ? 90000 : 80000;
+      const basic = wage * 0.5;
+      const hra = basic * 0.4;
+      const special = wage * 0.1;
+      const gross = basic + hra + special;
+      const pf = basic * 0.12;
+      const pt = 200;
+      const deductions = pf + pt;
+      const net = gross - deductions;
+
+      const [slip] = await sql`
+        INSERT INTO payslips (payrun_id, employee_id, period_start, period_end, worked_days, gross_amount, deduction_amount, net_amount, status)
+        VALUES (${pastPayrun.id}, ${emp.id}, '2026-08-01', '2026-08-31', 30, ${gross}, ${deductions}, ${net}, 'Sent')
+        RETURNING id
+      `;
+
+      await sql`
+        INSERT INTO payslip_lines (payslip_id, rule_code, rule_name, category, sequence, amount)
+        VALUES
+          (${slip.id}, 'BASIC', 'Basic Salary', 'basic', 10, ${basic}),
+          (${slip.id}, 'HRA', 'House Rent Allowance (HRA)', 'allowance', 20, ${hra}),
+          (${slip.id}, 'SPECIAL_ALLOW', 'Special Allowance', 'allowance', 30, ${special}),
+          (${slip.id}, 'GROSS', 'Gross Salary', 'gross', 40, ${gross}),
+          (${slip.id}, 'PF', 'Provident Fund (PF)', 'deduction', 50, ${pf}),
+          (${slip.id}, 'PT', 'Professional Tax (PT)', 'deduction', 60, ${pt}),
+          (${slip.id}, 'NET', 'Net Salary', 'net', 100, ${net})
+      `;
+    }
   }
 }
 
