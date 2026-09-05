@@ -1,19 +1,18 @@
-/**
- * Client-side Cache & Invalidation Manager for PeoplePay360
- */
-
+// Client cache and invalidation manager
 const cacheStore = new Map();
 const listeners = new Set();
 
-export function getCacheKey(url, params = {}) {
-  const paramStr = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
-  return `${url}?${paramStr}`;
+// Generate user-scoped cache key
+export function getCacheKey(url, params = {}, userScope = '') {
+  const paramStr = Object.keys(params || {}).sort().map(k => `${k}=${params[k]}`).join('&');
+  const prefix = userScope ? `user_${userScope}::` : '';
+  return `${prefix}${url}?${paramStr}`;
 }
 
+// Get item from cache with TTL check
 export function getCached(key) {
   const item = cacheStore.get(key);
   if (!item) return null;
-  // Optional cache duration check (5 minutes)
   if (Date.now() - item.timestamp > 5 * 60 * 1000) {
     cacheStore.delete(key);
     return null;
@@ -21,6 +20,7 @@ export function getCached(key) {
   return item.data;
 }
 
+// Store item in cache with tag associations
 export function setCached(key, data, tags = []) {
   cacheStore.set(key, {
     data,
@@ -29,6 +29,7 @@ export function setCached(key, data, tags = []) {
   });
 }
 
+// Invalidate matching tags
 export function invalidateCache(tags = []) {
   if (!tags || tags.length === 0) {
     cacheStore.clear();
@@ -43,11 +44,24 @@ export function invalidateCache(tags = []) {
   notifyListeners(tags);
 }
 
+// Clear all client cached data
+export function clearAllCache() {
+  cacheStore.clear();
+  notifyListeners([]);
+}
+
+// Subscribe to cache invalidation events
 export function subscribeCache(callback) {
   listeners.add(callback);
   return () => listeners.delete(callback);
 }
 
 function notifyListeners(tags) {
-  listeners.forEach(cb => cb(tags));
+  listeners.forEach(cb => {
+    try {
+      cb(tags);
+    } catch (err) {
+      console.error('Cache listener error:', err);
+    }
+  });
 }

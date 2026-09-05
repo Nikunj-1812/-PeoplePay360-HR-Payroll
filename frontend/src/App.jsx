@@ -16,11 +16,11 @@ import PayrunsPage from './pages/PayrunsPage';
 import SettingsPage from './pages/SettingsPage';
 
 function AppContent() {
-  const { user, loading, switchingRoleMsg } = useAuth();
+  const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
 
-  if (loading || switchingRoleMsg) {
-    return <GlobalLoadingScreen message={switchingRoleMsg || 'Restoring authenticated session...'} />;
+  if (loading) {
+    return <GlobalLoadingScreen message="Restoring authenticated session..." />;
   }
 
   if (!user) {
