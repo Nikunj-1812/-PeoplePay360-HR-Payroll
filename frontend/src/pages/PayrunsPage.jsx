@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CenteredSpinner } from '../components/ui/Loading';
@@ -60,15 +61,17 @@ export default function PayrunsPage() {
   // Email report state
   const [emailReport, setEmailReport] = useState(null);
 
-  const fetchPayruns = async () => {
+  const fetchPayruns = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const res = await api.getFetch('/payruns');
       const list = res.data || [];
       setPayruns(list);
       if (list.length > 0) {
         if (!selectedPayrun || !list.some(p => p.id === selectedPayrun.id)) {
-          handleSelectPayrun(list[0].id);
+          handleSelectPayrun(list[0].id, isBackground);
+        } else if (isBackground && selectedPayrun?.id) {
+          handleSelectPayrun(selectedPayrun.id, true);
         }
       } else {
         setSelectedPayrun(null);
@@ -76,21 +79,26 @@ export default function PayrunsPage() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchPayruns();
     api.getFetch('/salary/structures').then(r => setStructures(r.data || []));
+
+    const unsubscribe = subscribeCache(() => {
+      fetchPayruns(true);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const handleSelectPayrun = async (id) => {
+  const handleSelectPayrun = async (id, isBackground = false) => {
     try {
       const res = await api.getFetch(`/payruns/${id}`);
       setSelectedPayrun(res.data);
     } catch (err) {
-      toast.error(err.message || 'Failed to select payrun.');
+      if (!isBackground) toast.error(err.message || 'Failed to select payrun.');
     }
   };
 

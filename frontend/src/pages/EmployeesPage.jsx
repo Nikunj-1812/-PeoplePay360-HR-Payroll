@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/dateUtils';
 import { Search, Plus, LayoutGrid, List, User, Mail, Phone, Building2, Briefcase, FileText, Clock, WalletCards, Receipt, History, Award, Trash2, Edit2, ShieldCheck } from 'lucide-react';
@@ -24,17 +25,25 @@ export default function EmployeesPage({ onNavigateTab }) {
     job_position: 'Employee', role: 'employee', department_id: '1', bank_name: '', account_number: '', ifsc_code: ''
   });
 
-  const fetchEmployees = async () => {
+  const fetchEmployees = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const res = await api.getFetch('/employees', { params: { search } });
       setEmployees(res.data || []);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchEmployees();
+    const unsubscribe = subscribeCache(() => {
+      fetchEmployees(true);
+    });
+    return () => unsubscribe();
+  }, [search]);
 
   const handleEditEmployee = (emp, e) => {
     if (e) e.stopPropagation();

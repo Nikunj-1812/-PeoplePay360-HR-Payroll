@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CenteredSpinner } from '../components/ui/Loading';
@@ -28,9 +29,9 @@ export default function SettingsPage() {
   });
   const [newPassword, setNewPassword] = useState('');
 
-  const fetchUsersAndEmployees = async () => {
+  const fetchUsersAndEmployees = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const [usersRes, empRes] = await Promise.all([
         api.getFetch('/auth/users'),
         api.getFetch('/employees')
@@ -40,12 +41,16 @@ export default function SettingsPage() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchUsersAndEmployees();
+    const unsubscribe = subscribeCache(() => {
+      fetchUsersAndEmployees(true);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleCreateUser = async (e) => {

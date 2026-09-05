@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
+import { SocketProvider } from './context/SocketContext';
 import { GlobalLoadingScreen } from './components/ui/Loading';
 import Shell from './components/layout/Shell';
 import LoginPage from './components/auth/LoginPage';
@@ -65,9 +66,11 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ToastProvider>
-          <AppContent />
-        </ToastProvider>
+        <SocketProvider>
+          <ToastProvider>
+            <AppContent />
+          </ToastProvider>
+        </SocketProvider>
       </AuthProvider>
     </ThemeProvider>
   );

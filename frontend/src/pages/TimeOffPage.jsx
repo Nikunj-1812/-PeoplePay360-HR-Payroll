@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CenteredSpinner } from '../components/ui/Loading';
@@ -36,9 +37,9 @@ export default function TimeOffPage() {
     name: '', unit: 'days', requires_allocation: true, approval_workflow: 'hr_manager'
   });
 
-  const fetchData = async () => {
+  const fetchData = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const [reqRes, allocRes, typeRes, empRes] = await Promise.all([
         api.getFetch('/time-off/requests'),
         api.getFetch('/time-off/allocations'),
@@ -52,12 +53,16 @@ export default function TimeOffPage() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
+    const unsubscribe = subscribeCache(() => {
+      fetchData(true);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleCreateRequest = async (e) => {

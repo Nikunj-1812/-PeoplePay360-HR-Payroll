@@ -1,10 +1,13 @@
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const { sql } = require('./db');
 const { initializeDatabase } = require('./schema');
 const apiRouter = require('./routes/api');
+const { initSocket } = require('./services/socketService');
 
 const app = express();
+const server = http.createServer(app);
 const port = Number(process.env.PORT) || 5000;
 
 // Configured allowed frontend origins (local + deployed)
@@ -54,12 +57,35 @@ app.use(express.json());
 
 // Health Check
 app.get('/api/health', async (_req, res) => {
+  let dbStatus = 'disconnected';
+  let dbTime = null;
   try {
     const [database] = await sql`SELECT NOW() AS connected_at`;
-    res.json({ status: 'ok', database: 'connected', connectedAt: database.connected_at });
+    if (database && database.connected_at) {
+      dbStatus = 'connected';
+      dbTime = database.connected_at;
+    }
   } catch (error) {
-    res.status(503).json({ status: 'error', database: 'disconnected', message: error.message });
+    dbStatus = 'disconnected';
   }
+
+  const redisService = require('./services/redisService');
+  const socketService = require('./services/socketService');
+  const isRedisOk = redisService.isRedisConnected();
+  const socketIO = socketService.getIO();
+
+  const isHealthy = dbStatus === 'connected';
+  const statusCode = isHealthy ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: isHealthy ? 'ok' : 'degraded',
+    server: 'running',
+    database: dbStatus,
+    redis: isRedisOk ? 'connected' : 'disconnected (in-memory fallback active)',
+    socket: socketIO ? 'initialized' : 'disconnected',
+    timestamp: new Date().toISOString(),
+    connectedAt: dbTime
+  });
 });
 
 // Mount Main API Routes
@@ -76,7 +102,8 @@ app.use((err, _req, res, _next) => {
 
 async function startServer() {
   await initializeDatabase();
-  app.listen(port, () => {
+  initSocket(server, configuredOrigins);
+  server.listen(port, () => {
     console.log(`PeoplePay360 Backend running on http://localhost:${port}`);
     console.log(`Neon Database Connected.`);
   });
@@ -90,4 +117,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer };
+module.exports = { app, server, startServer };

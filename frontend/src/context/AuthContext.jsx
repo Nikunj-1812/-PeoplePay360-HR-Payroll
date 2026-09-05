@@ -40,8 +40,16 @@ export function AuthProvider({ children }) {
       setUser(null);
     };
 
+    const handleRevalidate = () => {
+      loadUser();
+    };
+
     window.addEventListener('pp360_unauthorized', handleUnauthorized);
-    return () => window.removeEventListener('pp360_unauthorized', handleUnauthorized);
+    window.addEventListener('pp360_user_revalidate', handleRevalidate);
+    return () => {
+      window.removeEventListener('pp360_unauthorized', handleUnauthorized);
+      window.removeEventListener('pp360_user_revalidate', handleRevalidate);
+    };
   }, []);
 
   const login = async (email, password) => {

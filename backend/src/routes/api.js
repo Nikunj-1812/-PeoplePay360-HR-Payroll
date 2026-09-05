@@ -16,6 +16,7 @@ const dashboardService = require('../services/dashboardService');
 const reportService = require('../services/reportService');
 const redisService = require('../services/redisService');
 const notificationService = require('../services/notificationService');
+const socketService = require('../services/socketService');
 const { sql } = require('../db');
 
 // Async handler wrapper
@@ -82,6 +83,7 @@ router.get('/auth/users', authenticateToken, requireRole(['hr_manager', 'hr_payr
 router.post('/auth/users', authenticateToken, requireRole(['admin']), asyncHandler(async (req, res) => {
   const user = await authService.createUser(req.body);
   await redisService.del('pp360:users:all');
+  socketService.emitToRole(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], 'USER_CREATED', { user });
   res.status(201).json({ success: true, data: user });
 }));
 
@@ -90,6 +92,7 @@ router.put('/auth/users/:id', authenticateToken, requireRole(['admin']), asyncHa
   const user = await authService.updateUser(req.params.id, req.body);
   await redisService.del('pp360:users:all');
   await redisService.del(`pp360:user:profile:${req.params.id}`);
+  socketService.emitToRolesAndUser(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], req.params.id, 'USER_UPDATED', { user });
   res.json({ success: true, data: user });
 }));
 
@@ -99,6 +102,7 @@ router.put('/auth/users/:id/reset-password', authenticateToken, requireRole(['ad
   if (!new_password) return res.status(400).json({ success: false, message: 'New password required' });
   const result = await authService.resetUserPassword(req.params.id, new_password);
   await redisService.del(`pp360:user:profile:${req.params.id}`);
+  socketService.emitToUser(req.params.id, 'USER_UPDATED', { id: req.params.id, event: 'password_reset' });
   res.json({ success: true, data: result });
 }));
 
@@ -107,6 +111,7 @@ router.delete('/auth/users/:id', authenticateToken, requireRole(['hr_manager', '
   const deleted = await authService.deleteUser(req.params.id);
   await redisService.del('pp360:users:all');
   await redisService.del(`pp360:user:profile:${req.params.id}`);
+  socketService.emitToRolesAndUser(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], req.params.id, 'USER_DELETED', { id: req.params.id });
   res.json({ success: true, data: deleted });
 }));
 
@@ -195,6 +200,8 @@ router.post('/employees', authenticateToken, requireRole(['hr_manager', 'hr_payr
   const emp = await employeeService.createEmployee(req.body);
   await redisService.invalidateEmployees();
   await redisService.del('pp360:users:all');
+  socketService.emitToRole(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], 'EMPLOYEE_CREATED', { employee: emp });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.status(201).json({ success: true, data: emp });
 }));
 
@@ -203,6 +210,8 @@ router.put('/employees/:id', authenticateToken, requireRole(['hr_manager', 'hr_p
   const emp = await employeeService.updateEmployee(req.params.id, req.body);
   await redisService.invalidateEmployees(req.params.id);
   await redisService.del('pp360:users:all');
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], emp?.id, 'EMPLOYEE_UPDATED', { employee: emp });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: emp });
 }));
 
@@ -211,6 +220,8 @@ router.delete('/employees/:id', authenticateToken, requireRole(['hr_manager', 'h
   const deleted = await employeeService.deleteEmployee(req.params.id);
   await redisService.invalidateEmployees(req.params.id);
   await redisService.del('pp360:users:all');
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], req.params.id, 'EMPLOYEE_DELETED', { id: req.params.id });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: deleted });
 }));
 
@@ -241,6 +252,8 @@ router.get('/contracts', authenticateToken, asyncHandler(async (req, res) => {
 router.post('/contracts', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const contract = await contractService.createContract(req.body);
   await redisService.invalidateContracts(contract.employee_id);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], contract?.employee_id, 'CONTRACT_UPDATED', { contract });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.status(201).json({ success: true, data: contract });
 }));
 
@@ -248,6 +261,8 @@ router.post('/contracts', authenticateToken, requireRole(['hr_manager', 'hr_payr
 router.put('/contracts/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const contract = await contractService.updateContract(req.params.id, req.body);
   await redisService.invalidateContracts(contract.employee_id);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], contract?.employee_id, 'CONTRACT_UPDATED', { contract });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: contract });
 }));
 
@@ -255,6 +270,8 @@ router.put('/contracts/:id', authenticateToken, requireRole(['hr_manager', 'hr_p
 router.delete('/contracts/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await contractService.deleteContract(req.params.id);
   await redisService.invalidateContracts();
+  socketService.emitToRole(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], 'CONTRACT_UPDATED', { id: req.params.id });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: deleted });
 }));
 
@@ -285,6 +302,8 @@ router.get('/schedules/:id', authenticateToken, asyncHandler(async (req, res) =>
 router.post('/schedules', authenticateToken, requireRole(['hr_manager', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const schedule = await scheduleService.createSchedule(req.body);
   await redisService.invalidateSchedules();
+  socketService.emitToAll('SCHEDULE_UPDATED', { schedule });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.status(201).json({ success: true, data: schedule });
 }));
 
@@ -292,6 +311,8 @@ router.post('/schedules', authenticateToken, requireRole(['hr_manager', 'hr_payr
 router.put('/schedules/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const updated = await scheduleService.updateSchedule(req.params.id, req.body);
   await redisService.invalidateSchedules();
+  socketService.emitToAll('SCHEDULE_UPDATED', { schedule: updated });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: updated });
 }));
 
@@ -299,6 +320,8 @@ router.put('/schedules/:id', authenticateToken, requireRole(['hr_manager', 'hr_p
 router.delete('/schedules/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await scheduleService.deleteSchedule(req.params.id);
   await redisService.invalidateSchedules();
+  socketService.emitToAll('SCHEDULE_UPDATED', { id: req.params.id });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: deleted });
 }));
 
@@ -330,6 +353,8 @@ const handleCheckIn = asyncHandler(async (req, res) => {
   if (!empId) return res.status(400).json({ success: false, message: 'Employee ID required' });
   const rec = await attendanceService.clockIn(empId);
   await redisService.invalidateAttendance(empId);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], empId, 'ATTENDANCE_UPDATED', { attendance: rec, action: 'check-in' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: rec });
 });
 
@@ -338,6 +363,8 @@ const handleCheckOut = asyncHandler(async (req, res) => {
   if (!empId) return res.status(400).json({ success: false, message: 'Employee ID required' });
   const rec = await attendanceService.clockOut(empId);
   await redisService.invalidateAttendance(empId);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], empId, 'ATTENDANCE_UPDATED', { attendance: rec, action: 'check-out' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: rec });
 });
 
@@ -358,6 +385,8 @@ router.put('/attendance/:id/correct', authenticateToken, requireRole(['hr_manage
     corrected_by: req.user.name
   });
   await redisService.invalidateAttendance(corrected?.employee_id);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], corrected?.employee_id, 'ATTENDANCE_UPDATED', { attendance: corrected, action: 'correction' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: corrected });
 }));
 
@@ -365,6 +394,8 @@ router.put('/attendance/:id/correct', authenticateToken, requireRole(['hr_manage
 router.delete('/attendance/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await attendanceService.deleteAttendance(req.params.id);
   await redisService.invalidateAttendance();
+  socketService.emitToRole(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], 'ATTENDANCE_UPDATED', { id: req.params.id, action: 'delete' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: deleted });
 }));
 
@@ -429,6 +460,8 @@ router.get('/time-off/allocations', authenticateToken, asyncHandler(async (req, 
 router.post('/time-off/allocations', authenticateToken, requireRole(['hr_manager', 'admin']), asyncHandler(async (req, res) => {
   const created = await timeOffService.createAllocation(req.body);
   await redisService.invalidateTimeOff(created.employee_id);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], created.employee_id, 'TIME_OFF_UPDATED', { allocation: created });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.status(201).json({ success: true, data: created });
 }));
 
@@ -436,6 +469,8 @@ router.post('/time-off/allocations', authenticateToken, requireRole(['hr_manager
 router.put('/time-off/allocations/:id', authenticateToken, requireRole(['hr_manager', 'admin']), asyncHandler(async (req, res) => {
   const updated = await timeOffService.updateAllocation(req.params.id, req.body);
   await redisService.invalidateTimeOff();
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], updated?.employee_id, 'TIME_OFF_UPDATED', { allocation: updated });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: updated });
 }));
 
@@ -443,6 +478,8 @@ router.put('/time-off/allocations/:id', authenticateToken, requireRole(['hr_mana
 router.delete('/time-off/allocations/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await timeOffService.deleteAllocation(req.params.id);
   await redisService.invalidateTimeOff();
+  socketService.emitToRole(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], 'TIME_OFF_UPDATED', { id: req.params.id });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: deleted });
 }));
 
@@ -470,6 +507,8 @@ router.post('/time-off/requests', authenticateToken, asyncHandler(async (req, re
   const empId = req.body.employee_id || req.user.employee_id;
   const request = await timeOffService.createRequest({ ...req.body, employee_id: empId });
   await redisService.invalidateTimeOff(empId);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], empId, 'TIME_OFF_UPDATED', { request, status: 'requested' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.status(201).json({ success: true, data: request });
 }));
 
@@ -477,6 +516,8 @@ router.post('/time-off/requests', authenticateToken, asyncHandler(async (req, re
 router.put('/time-off/requests/:id/approve', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const approved = await timeOffService.approveRequest(req.params.id, req.user.name);
   await redisService.invalidateTimeOff(approved?.employee_id);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], approved?.employee_id, 'TIME_OFF_UPDATED', { request: approved, status: 'approved' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: approved });
 }));
 
@@ -484,6 +525,8 @@ router.put('/time-off/requests/:id/approve', authenticateToken, requireRole(['hr
 router.put('/time-off/requests/:id/refuse', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const refused = await timeOffService.refuseRequest(req.params.id, req.user.name);
   await redisService.invalidateTimeOff(refused?.employee_id);
+  socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], refused?.employee_id, 'TIME_OFF_UPDATED', { request: refused, status: 'refused' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: refused });
 }));
 
@@ -491,6 +534,8 @@ router.put('/time-off/requests/:id/refuse', authenticateToken, requireRole(['hr_
 router.delete('/time-off/requests/:id', authenticateToken, asyncHandler(async (req, res) => {
   const deleted = await timeOffService.deleteRequest(req.params.id);
   await redisService.invalidateTimeOff();
+  socketService.emitToRole(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], 'TIME_OFF_UPDATED', { id: req.params.id, status: 'deleted' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: deleted });
 }));
 
@@ -528,6 +573,7 @@ router.get('/salary/structures/:id', authenticateToken, asyncHandler(async (req,
 router.post('/salary/structures', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const struct = await salaryService.createSalaryStructure(req.body);
   await redisService.invalidateSalaryStructures(struct?.id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_STRUCTURE_UPDATED', { structure: struct });
   res.status(201).json({ success: true, data: struct });
 }));
 
@@ -535,6 +581,7 @@ router.post('/salary/structures', authenticateToken, requireRole(['hr_payroll_ma
 router.put('/salary/structures/:id', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const updated = await salaryService.updateSalaryStructure(req.params.id, req.body);
   await redisService.invalidateSalaryStructures(req.params.id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_STRUCTURE_UPDATED', { structure: updated });
   res.json({ success: true, data: updated });
 }));
 
@@ -542,6 +589,7 @@ router.put('/salary/structures/:id', authenticateToken, requireRole(['hr_payroll
 router.delete('/salary/structures/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await salaryService.deleteSalaryStructure(req.params.id);
   await redisService.invalidateSalaryStructures(req.params.id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_STRUCTURE_UPDATED', { id: req.params.id });
   res.json({ success: true, data: deleted });
 }));
 
@@ -563,6 +611,7 @@ router.get('/salary/rules', authenticateToken, asyncHandler(async (req, res) => 
 router.post('/salary/rules', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const rule = await salaryService.createSalaryRule(req.body);
   await redisService.invalidateSalaryStructures(rule?.salary_structure_id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_RULE_UPDATED', { rule });
   res.status(201).json({ success: true, data: rule });
 }));
 
@@ -570,6 +619,7 @@ router.post('/salary/rules', authenticateToken, requireRole(['hr_payroll_manager
 router.put('/salary/rules/:id', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const updated = await salaryService.updateSalaryRule(req.params.id, req.body);
   await redisService.invalidateSalaryStructures(updated?.salary_structure_id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_RULE_UPDATED', { rule: updated });
   res.json({ success: true, data: updated });
 }));
 
@@ -577,6 +627,7 @@ router.put('/salary/rules/:id', authenticateToken, requireRole(['hr_payroll_mana
 router.delete('/salary/rules/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await salaryService.deleteSalaryRule(req.params.id);
   await redisService.invalidateSalaryStructures();
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_RULE_UPDATED', { id: req.params.id });
   res.json({ success: true, data: deleted });
 }));
 
@@ -584,6 +635,7 @@ router.delete('/salary/rules/:id', authenticateToken, requireRole(['hr_manager',
 router.put('/salary/rules/reorder', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const result = await salaryService.reorderSalaryRules(req.body.rules);
   await redisService.invalidateSalaryStructures();
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_RULE_UPDATED', { action: 'reorder' });
   res.json({ success: true, data: result });
 }));
 
@@ -635,6 +687,8 @@ router.get('/payruns/:id', authenticateToken, asyncHandler(async (req, res) => {
 router.post('/payruns', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const payrun = await payrollService.createPayrun(req.body);
   await redisService.invalidatePayruns(payrun?.id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'PAYRUN_UPDATED', { payrun, action: 'created' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.status(201).json({ success: true, data: payrun });
 }));
 
@@ -642,6 +696,9 @@ router.post('/payruns', authenticateToken, requireRole(['hr_payroll_user', 'hr_p
 router.post('/payruns/:id/compute', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const computed = await payrollService.computePayrun(req.params.id);
   await redisService.invalidatePayruns(req.params.id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'PAYRUN_UPDATED', { payrun: computed, action: 'computed' });
+  socketService.emitToAll('PAYSLIP_UPDATED', {});
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: computed });
 }));
 
@@ -649,6 +706,9 @@ router.post('/payruns/:id/compute', authenticateToken, requireRole(['hr_payroll_
 router.put('/payruns/:id/status', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const updated = await payrollService.updatePayrunStatus(req.params.id, req.body.status);
   await redisService.invalidatePayruns(req.params.id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'PAYRUN_UPDATED', { payrun: updated, action: 'status_changed' });
+  socketService.emitToAll('PAYSLIP_UPDATED', {});
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: updated });
 }));
 
@@ -656,6 +716,8 @@ router.put('/payruns/:id/status', authenticateToken, requireRole(['hr_payroll_us
 router.post('/payruns/:id/send-payslips', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const result = await emailService.sendBulkPayslips(req.params.id);
   await redisService.invalidatePayruns(req.params.id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'PAYRUN_UPDATED', { id: req.params.id, action: 'payslips_sent' });
+  socketService.emitToAll('PAYSLIP_UPDATED', {});
   res.json({ success: true, data: result });
 }));
 
@@ -663,6 +725,8 @@ router.post('/payruns/:id/send-payslips', authenticateToken, requireRole(['hr_pa
 router.delete('/payruns/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await payrollService.deletePayrun(req.params.id);
   await redisService.invalidatePayruns(req.params.id);
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'PAYRUN_UPDATED', { id: req.params.id, action: 'deleted' });
+  socketService.emitToAll('DASHBOARD_UPDATED', {});
   res.json({ success: true, data: deleted });
 }));
 

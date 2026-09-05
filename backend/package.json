@@ -24,7 +24,8 @@
     "multer": "^2.3.0",
     "nodemailer": "^10.0.0",
     "pdfkit": "^0.20.2",
-    "pg-mem": "^3.0.14"
+    "pg-mem": "^3.0.14",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

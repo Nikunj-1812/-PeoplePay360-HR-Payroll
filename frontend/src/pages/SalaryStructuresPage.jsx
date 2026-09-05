@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
@@ -29,33 +30,37 @@ export default function SalaryStructuresPage() {
 
   const canManage = ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'].includes(user?.role || '');
 
-  const fetchStructures = async (selectId = null) => {
+  const fetchStructures = async (selectId = null, isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const res = await api.getFetch('/salary/structures');
       const list = res.data || [];
       setStructures(list);
       const targetId = selectId || selectedStruct?.id || (list.length > 0 ? list[0].id : null);
       if (targetId) {
-        handleSelectStructure(targetId);
+        handleSelectStructure(targetId, isBackground);
       }
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchStructures();
+    const unsubscribe = subscribeCache(() => {
+      fetchStructures(null, true);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const handleSelectStructure = async (id) => {
+  const handleSelectStructure = async (id, isBackground = false) => {
     try {
       const detail = await api.getFetch(`/salary/structures/${id}`);
       setSelectedStruct(detail.data);
     } catch (err) {
-      toast.error(err.message || 'Failed to fetch salary structure.');
+      if (!isBackground) toast.error(err.message || 'Failed to fetch salary structure.');
     }
   };
 

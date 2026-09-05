@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/dateUtils';
@@ -23,15 +24,15 @@ export default function ContractsPage() {
     wage: 85000, position: 'Software Engineer', employment_terms: 'Full Time Permanent'
   });
 
-  const fetchContracts = async () => {
+  const fetchContracts = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const res = await api.getFetch('/contracts');
       setContracts(res.data || []);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -63,6 +64,11 @@ export default function ContractsPage() {
   useEffect(() => {
     fetchContracts();
     api.getFetch('/employees').then(r => setEmployees(r.data || []));
+
+    const unsubscribe = subscribeCache(() => {
+      fetchContracts(true);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleCreate = async (e) => {

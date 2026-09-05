@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api/client';
+import { subscribeCache } from '../api/cache';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
@@ -40,9 +41,9 @@ export default function AttendancePage() {
   const isCheckedIn = Boolean(todayRecord && todayRecord.check_in);
   const isCheckedOut = Boolean(todayRecord && todayRecord.check_out);
 
-  const fetchAttendance = async () => {
+  const fetchAttendance = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const [attRes, schedRes] = await Promise.all([
         api.getFetch('/attendance'),
         api.getFetch('/schedules')
@@ -52,12 +53,16 @@ export default function AttendancePage() {
     } catch (err) {
       console.error('Error fetching attendance data:', err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchAttendance();
+    const unsubscribe = subscribeCache(() => {
+      fetchAttendance(true);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleCheckIn = async () => {
