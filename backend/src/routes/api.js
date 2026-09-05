@@ -54,20 +54,20 @@ router.get('/notifications', authenticateToken, asyncHandler(async (req, res) =>
   res.json({ success: true, data });
 }));
 
-// PUT /api/notifications/:id/read
-router.put('/notifications/:id/read', authenticateToken, asyncHandler(async (req, res) => {
-  const data = await notificationService.markAsRead(req.params.id, req.user.id);
-  res.json({ success: true, data });
-}));
-
 // PUT /api/notifications/read-all
 router.put('/notifications/read-all', authenticateToken, asyncHandler(async (req, res) => {
   const data = await notificationService.markAllAsRead(req.user.id);
   res.json({ success: true, data });
 }));
 
+// PUT /api/notifications/:id/read
+router.put('/notifications/:id/read', authenticateToken, asyncHandler(async (req, res) => {
+  const data = await notificationService.markAsRead(req.params.id, req.user.id);
+  res.json({ success: true, data });
+}));
+
 // GET /api/auth/users
-router.get('/auth/users', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (_req, res) => {
+router.get('/auth/users', authenticateToken, requireRole(['admin']), asyncHandler(async (_req, res) => {
   const cacheKey = 'pp360:users:all';
   const cached = await redisService.get(cacheKey);
   if (cached) {
@@ -107,7 +107,7 @@ router.put('/auth/users/:id/reset-password', authenticateToken, requireRole(['ad
 }));
 
 // DELETE /api/auth/users/:id
-router.delete('/auth/users/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
+router.delete('/auth/users/:id', authenticateToken, requireRole(['admin']), asyncHandler(async (req, res) => {
   const deleted = await authService.deleteUser(req.params.id);
   await redisService.del('pp360:users:all');
   await redisService.del(`pp360:user:profile:${req.params.id}`);
@@ -334,23 +334,32 @@ router.get('/attendance', authenticateToken, asyncHandler(async (req, res) => {
   const query = { ...req.query };
   const isEmployee = req.user && req.user.role === 'employee';
   if (isEmployee) {
+    if (!req.user.employee_id) {
+      return res.json({ success: true, data: [] });
+    }
     query.employee_id = req.user.employee_id;
   }
 
-  const cacheKey = `pp360:attendance:${req.user.role}:${isEmployee ? req.user.employee_id : (query.employee_id || 'all')}:${JSON.stringify(query)}`;
-  const cached = await redisService.get(cacheKey);
-  if (cached) {
-    return res.json({ success: true, data: cached, cached: true });
-  }
-
   const attendance = await attendanceService.getAttendance(query);
-  await redisService.set(cacheKey, attendance, 300);
   res.json({ success: true, data: attendance });
 }));
 
 const handleCheckIn = asyncHandler(async (req, res) => {
-  const empId = req.body?.employee_id || req.user?.employee_id;
-  if (!empId) return res.status(400).json({ success: false, message: 'Employee ID required' });
+  let empId = req.user?.role === 'employee'
+    ? req.user.employee_id
+    : (req.body?.employee_id || req.user?.employee_id);
+  if (!empId && req.user?.id) {
+    const [emp] = await sql`
+      SELECT e.id
+      FROM users u
+      JOIN employees e ON e.id = u.employee_id
+      WHERE u.id = ${req.user.id} OR lower(trim(u.email)) = lower(trim(${req.user.email}))
+      LIMIT 1
+    `;
+    if (emp) empId = emp.id;
+  }
+  if (!empId) return res.status(400).json({ success: false, message: 'Employee ID required for Check In' });
+
   const rec = await attendanceService.clockIn(empId);
   await redisService.invalidateAttendance(empId);
   socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], empId, 'ATTENDANCE_UPDATED', { attendance: rec, action: 'check-in' });
@@ -359,8 +368,21 @@ const handleCheckIn = asyncHandler(async (req, res) => {
 });
 
 const handleCheckOut = asyncHandler(async (req, res) => {
-  const empId = req.body?.employee_id || req.user?.employee_id;
-  if (!empId) return res.status(400).json({ success: false, message: 'Employee ID required' });
+  let empId = req.user?.role === 'employee'
+    ? req.user.employee_id
+    : (req.body?.employee_id || req.user?.employee_id);
+  if (!empId && req.user?.id) {
+    const [emp] = await sql`
+      SELECT e.id
+      FROM users u
+      JOIN employees e ON e.id = u.employee_id
+      WHERE u.id = ${req.user.id} OR lower(trim(u.email)) = lower(trim(${req.user.email}))
+      LIMIT 1
+    `;
+    if (emp) empId = emp.id;
+  }
+  if (!empId) return res.status(400).json({ success: false, message: 'Employee ID required for Check Out' });
+
   const rec = await attendanceService.clockOut(empId);
   await redisService.invalidateAttendance(empId);
   socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], empId, 'ATTENDANCE_UPDATED', { attendance: rec, action: 'check-out' });
@@ -404,7 +426,7 @@ router.delete('/attendance/:id', authenticateToken, requireRole(['hr_manager', '
 // ==========================================
 
 // GET /api/time-off/types
-router.get('/time-off/types', asyncHandler(async (_req, res) => {
+router.get('/time-off/types', authenticateToken, asyncHandler(async (_req, res) => {
   const cacheKey = 'pp360:timeoff:types';
   const cached = await redisService.get(cacheKey);
   if (cached) {
@@ -457,7 +479,7 @@ router.get('/time-off/allocations', authenticateToken, asyncHandler(async (req, 
 }));
 
 // POST /api/time-off/allocations
-router.post('/time-off/allocations', authenticateToken, requireRole(['hr_manager', 'admin']), asyncHandler(async (req, res) => {
+router.post('/time-off/allocations', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const created = await timeOffService.createAllocation(req.body);
   await redisService.invalidateTimeOff(created.employee_id);
   socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], created.employee_id, 'TIME_OFF_UPDATED', { allocation: created });
@@ -466,7 +488,7 @@ router.post('/time-off/allocations', authenticateToken, requireRole(['hr_manager
 }));
 
 // PUT /api/time-off/allocations/:id
-router.put('/time-off/allocations/:id', authenticateToken, requireRole(['hr_manager', 'admin']), asyncHandler(async (req, res) => {
+router.put('/time-off/allocations/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const updated = await timeOffService.updateAllocation(req.params.id, req.body);
   await redisService.invalidateTimeOff();
   socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], updated?.employee_id, 'TIME_OFF_UPDATED', { allocation: updated });
@@ -504,7 +526,12 @@ router.get('/time-off/requests', authenticateToken, asyncHandler(async (req, res
 
 // POST /api/time-off/requests
 router.post('/time-off/requests', authenticateToken, asyncHandler(async (req, res) => {
-  const empId = req.body.employee_id || req.user.employee_id;
+  const empId = req.user?.role === 'employee'
+    ? req.user.employee_id
+    : (req.body.employee_id || req.user.employee_id);
+  if (!empId) {
+    return res.status(400).json({ success: false, message: 'Link this user to an employee profile before requesting time off.' });
+  }
   const request = await timeOffService.createRequest({ ...req.body, employee_id: empId });
   await redisService.invalidateTimeOff(empId);
   socketService.emitToRolesAndEmployee(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], empId, 'TIME_OFF_UPDATED', { request, status: 'requested' });
@@ -532,6 +559,13 @@ router.put('/time-off/requests/:id/refuse', authenticateToken, requireRole(['hr_
 
 // DELETE /api/time-off/requests/:id
 router.delete('/time-off/requests/:id', authenticateToken, asyncHandler(async (req, res) => {
+  if (req.user && req.user.role === 'employee') {
+    const reqs = await sql`SELECT employee_id FROM time_off_requests WHERE id = ${req.params.id}`;
+    if (reqs.length === 0 || String(reqs[0].employee_id) !== String(req.user.employee_id)) {
+      return res.status(403).json({ success: false, message: 'Access denied to delete another employee request.' });
+    }
+  }
+
   const deleted = await timeOffService.deleteRequest(req.params.id);
   await redisService.invalidateTimeOff();
   socketService.emitToRole(['admin', 'hr_manager', 'hr_payroll_manager', 'hr_payroll_user'], 'TIME_OFF_UPDATED', { id: req.params.id, status: 'deleted' });
@@ -544,7 +578,7 @@ router.delete('/time-off/requests/:id', authenticateToken, asyncHandler(async (r
 // ==========================================
 
 // GET /api/salary/structures
-router.get('/salary/structures', authenticateToken, asyncHandler(async (_req, res) => {
+router.get('/salary/structures', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (_req, res) => {
   const cacheKey = 'pp360:salary:structures:list';
   const cached = await redisService.get(cacheKey);
   if (cached) {
@@ -557,7 +591,7 @@ router.get('/salary/structures', authenticateToken, asyncHandler(async (_req, re
 }));
 
 // GET /api/salary/structures/:id
-router.get('/salary/structures/:id', authenticateToken, asyncHandler(async (req, res) => {
+router.get('/salary/structures/:id', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const cacheKey = `pp360:salary:structures:detail:${req.params.id}`;
   const cached = await redisService.get(cacheKey);
   if (cached) {
@@ -586,7 +620,7 @@ router.put('/salary/structures/:id', authenticateToken, requireRole(['hr_payroll
 }));
 
 // DELETE /api/salary/structures/:id
-router.delete('/salary/structures/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
+router.delete('/salary/structures/:id', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await salaryService.deleteSalaryStructure(req.params.id);
   await redisService.invalidateSalaryStructures(req.params.id);
   socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_STRUCTURE_UPDATED', { id: req.params.id });
@@ -594,7 +628,7 @@ router.delete('/salary/structures/:id', authenticateToken, requireRole(['hr_mana
 }));
 
 // GET /api/salary/rules
-router.get('/salary/rules', authenticateToken, asyncHandler(async (req, res) => {
+router.get('/salary/rules', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const structId = req.query.salary_structure_id || 'all';
   const cacheKey = `pp360:salary:rules:${structId}`;
   const cached = await redisService.get(cacheKey);
@@ -615,6 +649,14 @@ router.post('/salary/rules', authenticateToken, requireRole(['hr_payroll_manager
   res.status(201).json({ success: true, data: rule });
 }));
 
+// PUT /api/salary/rules/reorder
+router.put('/salary/rules/reorder', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
+  const result = await salaryService.reorderSalaryRules(req.body.rules);
+  await redisService.invalidateSalaryStructures();
+  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_RULE_UPDATED', { action: 'reorder' });
+  res.json({ success: true, data: result });
+}));
+
 // PUT /api/salary/rules/:id
 router.put('/salary/rules/:id', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const updated = await salaryService.updateSalaryRule(req.params.id, req.body);
@@ -624,19 +666,11 @@ router.put('/salary/rules/:id', authenticateToken, requireRole(['hr_payroll_mana
 }));
 
 // DELETE /api/salary/rules/:id
-router.delete('/salary/rules/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
+router.delete('/salary/rules/:id', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await salaryService.deleteSalaryRule(req.params.id);
   await redisService.invalidateSalaryStructures();
   socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_RULE_UPDATED', { id: req.params.id });
   res.json({ success: true, data: deleted });
-}));
-
-// PUT /api/salary/rules/reorder
-router.put('/salary/rules/reorder', authenticateToken, requireRole(['hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
-  const result = await salaryService.reorderSalaryRules(req.body.rules);
-  await redisService.invalidateSalaryStructures();
-  socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'SALARY_RULE_UPDATED', { action: 'reorder' });
-  res.json({ success: true, data: result });
 }));
 
 // ==========================================
@@ -644,21 +678,14 @@ router.put('/salary/rules/reorder', authenticateToken, requireRole(['hr_payroll_
 // ==========================================
 
 // GET /api/payruns/eligible-employees
-router.get('/payruns/eligible-employees', authenticateToken, asyncHandler(async (req, res) => {
+router.get('/payruns/eligible-employees', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const { salary_structure_id, period_start, period_end } = req.query;
-  const cacheKey = `pp360:payruns:eligible:${salary_structure_id || 'all'}:${period_start}:${period_end}`;
-  const cached = await redisService.get(cacheKey);
-  if (cached) {
-    return res.json({ success: true, data: cached, cached: true });
-  }
-
   const employees = await payrollService.getEligibleEmployees(salary_structure_id, period_start, period_end);
-  await redisService.set(cacheKey, employees, 300);
   res.json({ success: true, data: employees });
 }));
 
 // GET /api/payruns
-router.get('/payruns', authenticateToken, asyncHandler(async (_req, res) => {
+router.get('/payruns', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (_req, res) => {
   const cacheKey = 'pp360:payruns:list';
   const cached = await redisService.get(cacheKey);
   if (cached) {
@@ -671,7 +698,7 @@ router.get('/payruns', authenticateToken, asyncHandler(async (_req, res) => {
 }));
 
 // GET /api/payruns/:id
-router.get('/payruns/:id', authenticateToken, asyncHandler(async (req, res) => {
+router.get('/payruns/:id', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const cacheKey = `pp360:payruns:detail:${req.params.id}`;
   const cached = await redisService.get(cacheKey);
   if (cached) {
@@ -722,7 +749,7 @@ router.post('/payruns/:id/send-payslips', authenticateToken, requireRole(['hr_pa
 }));
 
 // DELETE /api/payruns/:id
-router.delete('/payruns/:id', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
+router.delete('/payruns/:id', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const deleted = await payrollService.deletePayrun(req.params.id);
   await redisService.invalidatePayruns(req.params.id);
   socketService.emitToRole(['admin', 'hr_payroll_manager', 'hr_payroll_user'], 'PAYRUN_UPDATED', { id: req.params.id, action: 'deleted' });
@@ -732,6 +759,10 @@ router.delete('/payruns/:id', authenticateToken, requireRole(['hr_manager', 'hr_
 
 // GET /api/payslips
 router.get('/payslips', authenticateToken, asyncHandler(async (req, res) => {
+  if (req.user && req.user.role === 'hr_manager') {
+    return res.status(403).json({ success: false, message: 'HR Managers do not have access to payroll payslips.' });
+  }
+
   let empId = req.query.employee_id;
   const isEmployee = req.user && req.user.role === 'employee';
   if (isEmployee) {
@@ -768,8 +799,59 @@ router.get('/payslips', authenticateToken, asyncHandler(async (req, res) => {
   res.json({ success: true, data: payslips });
 }));
 
+// GET /api/payslips/:id
+router.get('/payslips/:id', authenticateToken, asyncHandler(async (req, res) => {
+  if (req.user && req.user.role === 'hr_manager') {
+    return res.status(403).json({ success: false, message: 'HR Managers do not have access to payroll payslips.' });
+  }
+
+  const slipId = parseInt(req.params.id, 10);
+  const slips = await sql`
+    SELECT 
+      p.*,
+      pr.name as payrun_name,
+      e.first_name || ' ' || e.last_name as employee_name,
+      e.emp_id, e.email, e.job_position, e.bank_name, e.account_number,
+      d.name as department_name
+    FROM payslips p
+    JOIN payruns pr ON p.payrun_id = pr.id
+    JOIN employees e ON p.employee_id = e.id
+    LEFT JOIN departments d ON e.department_id = d.id
+    WHERE p.id = ${slipId}
+  `;
+
+  if (slips.length === 0) {
+    return res.status(404).json({ success: false, message: 'Payslip not found' });
+  }
+
+  const slip = slips[0];
+
+  if (req.user && req.user.role === 'employee' && String(slip.employee_id) !== String(req.user.employee_id)) {
+    return res.status(403).json({ success: false, message: 'Access denied to another employee payslip.' });
+  }
+
+  const lines = await sql`
+    SELECT * FROM payslip_lines
+    WHERE payslip_id = ${slipId}
+    ORDER BY sequence ASC
+  `;
+
+  res.json({ success: true, data: { ...slip, lines } });
+}));
+
 // GET /api/payslips/:id/pdf
 router.get('/payslips/:id/pdf', authenticateToken, asyncHandler(async (req, res) => {
+  if (req.user && req.user.role === 'hr_manager') {
+    return res.status(403).json({ success: false, message: 'HR Managers do not have access to payroll payslips.' });
+  }
+
+  if (req.user && req.user.role === 'employee') {
+    const slips = await sql`SELECT employee_id FROM payslips WHERE id = ${req.params.id}`;
+    if (slips.length === 0 || String(slips[0].employee_id) !== String(req.user.employee_id)) {
+      return res.status(403).json({ success: false, message: 'Access denied to other employee payslips.' });
+    }
+  }
+
   const pdfBuffer = await pdfService.generatePayslipPDF(req.params.id);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename=payslip-${req.params.id}.pdf`);
@@ -783,6 +865,10 @@ router.get('/payslips/:id/pdf', authenticateToken, asyncHandler(async (req, res)
 // GET /api/reports (Generic Query Alias)
 router.get('/reports', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
   const type = (req.query.type || 'payroll').toLowerCase();
+  if (req.user && req.user.role === 'hr_manager' && (type === 'payroll' || type === 'payslips')) {
+    return res.status(403).json({ success: false, message: 'HR Managers do not have access to payroll reports.' });
+  }
+
   let data;
   if (type === 'employees') {
     data = await reportService.getEmployeeReport(req.query);

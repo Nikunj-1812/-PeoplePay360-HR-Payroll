@@ -28,7 +28,7 @@ export default function SalaryStructuresPage() {
     name: '', code: '', category: 'allowance', sequence: 25, computation_type: 'percentage', amount: 0, percentage: 10, percentage_based_on: 'BASIC', formula_expression: ''
   });
 
-  const canManage = ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'].includes(user?.role || '');
+  const canManage = ['hr_payroll_manager', 'admin'].includes(user?.role || '');
 
   const fetchStructures = async (selectId = null, isBackground = false) => {
     try {

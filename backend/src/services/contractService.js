@@ -27,7 +27,6 @@ async function findApplicableContract(employeeId, periodStart, periodEnd) {
     WHERE c.employee_id = ${employeeId}
       AND c.start_date <= ${periodEnd}
       AND (c.end_date IS NULL OR c.end_date >= ${periodStart})
-      AND c.status = 'Active'
     ORDER BY c.start_date DESC
     LIMIT 1
   `;
@@ -35,20 +34,39 @@ async function findApplicableContract(employeeId, periodStart, periodEnd) {
 }
 
 async function createContract(data) {
-  const { contract_number, employee_id, start_date, end_date, wage, salary_structure_id, department_id, position, employment_terms } = data;
+  const { contract_number, employee_id, start_date, end_date, wage, salary_structure_id, department_id, position, employment_terms, status = 'Active' } = data;
+
+  // Auto-expire existing active contracts for the same employee to prevent concurrent active contracts
+  if (status === 'Active') {
+    const prevContracts = await sql`
+      SELECT id, start_date FROM contracts 
+      WHERE employee_id = ${employee_id} AND status = 'Active'
+    `;
+    
+    for (const prev of prevContracts) {
+      // Calculate end date as one day prior to new contract start date if possible
+      const newStart = new Date(start_date);
+      const prevEnd = new Date(newStart.getTime() - 86400000).toISOString().split('T')[0];
+      await sql`
+        UPDATE contracts 
+        SET status = 'Expired', end_date = COALESCE(end_date, ${prevEnd})
+        WHERE id = ${prev.id}
+      `;
+    }
+  }
 
   const [contract] = await sql`
     INSERT INTO contracts
       (contract_number, employee_id, start_date, end_date, wage, salary_structure_id, department_id, position, status, employment_terms)
     VALUES
-      (${contract_number}, ${employee_id}, ${start_date}, ${end_date || null}, ${wage}, ${salary_structure_id || null}, ${department_id || null}, ${position}, 'Active', ${employment_terms || ''})
+      (${contract_number}, ${employee_id}, ${start_date}, ${end_date || null}, ${wage}, ${salary_structure_id || null}, ${department_id || null}, ${position}, ${status}, ${employment_terms || ''})
     RETURNING *
   `;
 
   try {
     await notificationService.notifyEmployeeUser(employee_id, {
       title: 'New Contract Assigned',
-      message: `Contract #${contract_number} has been created for you with wage ₹${parseFloat(wage || 0).toLocaleString()}/mo.`,
+      message: `Contract #${contract_number} (${position}) has been created for you with wage ₹${parseFloat(wage || 0).toLocaleString()}/mo.`,
       type: 'contract',
       link_tab: 'contracts'
     });

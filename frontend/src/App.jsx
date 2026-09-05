@@ -7,6 +7,8 @@ import { GlobalLoadingScreen } from './components/ui/Loading';
 import Shell from './components/layout/Shell';
 import LoginPage from './components/auth/LoginPage';
 
+import LandingPage from './components/landing/LandingPage';
+
 import DashboardPage from './pages/DashboardPage';
 import EmployeesPage from './pages/EmployeesPage';
 import ContractsPage from './pages/ContractsPage';
@@ -20,13 +22,24 @@ import SettingsPage from './pages/SettingsPage';
 function AppContent() {
   const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showAuth, setShowAuth] = useState(false);
+
+  // Return to the public landing page whenever the session ends.
+  React.useEffect(() => {
+    if (!user) {
+      setShowAuth(false);
+    }
+  }, [user]);
 
   if (loading) {
     return <GlobalLoadingScreen message="Restoring authenticated session..." />;
   }
 
   if (!user) {
-    return <LoginPage />;
+    if (!showAuth) {
+      return <LandingPage onOpenApp={() => setShowAuth(true)} onOpenSignIn={() => setShowAuth(true)} />;
+    }
+    return <LoginPage onCancel={() => setShowAuth(false)} />;
   }
 
   const renderContent = () => {
@@ -57,7 +70,9 @@ function AppContent() {
 
   return (
     <Shell activeTab={activeTab} setActiveTab={setActiveTab}>
-      {renderContent()}
+      <div key={activeTab} className="page-transition">
+        {renderContent()}
+      </div>
     </Shell>
   );
 }

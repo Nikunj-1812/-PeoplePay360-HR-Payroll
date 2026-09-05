@@ -3,20 +3,20 @@ const { findApplicableContract } = require('./contractService');
 
 async function getEligibleEmployees(salaryStructureId, periodStart, periodEnd) {
   const cleanStructId = salaryStructureId && !isNaN(salaryStructureId) ? parseInt(salaryStructureId, 10) : null;
-  // Find employees who have active contracts covering period
+  // Show active employees even when their period contract is missing so payroll can surface a warning.
   const employees = await sql`
-    SELECT DISTINCT
+    SELECT DISTINCT ON (e.id)
       e.id, e.emp_id, e.first_name, e.last_name, e.email, e.job_position, e.bank_name, e.account_number,
       d.name as department_name,
       c.id as contract_id, c.wage, c.contract_number
     FROM employees e
-    JOIN contracts c ON c.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    WHERE c.status = 'Active'
+    LEFT JOIN contracts c ON c.employee_id = e.id
       AND c.start_date <= ${periodEnd}
       AND (c.end_date IS NULL OR c.end_date >= ${periodStart})
       AND (${cleanStructId}::int IS NULL OR c.salary_structure_id = ${cleanStructId})
-    ORDER BY e.id ASC
+    LEFT JOIN departments d ON e.department_id = d.id
+    WHERE e.status = 'Active'
+    ORDER BY e.id ASC, c.start_date DESC
   `;
   return employees;
 }
@@ -79,15 +79,16 @@ async function createPayrun(data) {
     RETURNING *
   `;
 
-  // 2. Fetch all active contracts for selected employees in a single batch query
+  // 2. Fetch all valid contracts for selected employees in a single batch query for that period
   const cleanEmpIds = employee_ids.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
   const contracts = await sql`
-    SELECT id, employee_id
+    SELECT DISTINCT ON (employee_id) id, employee_id
     FROM contracts
     WHERE employee_id = ANY(${cleanEmpIds})
-      AND status = 'Active'
+      AND salary_structure_id = ${salary_structure_id}
       AND start_date <= ${period_end}
       AND (end_date IS NULL OR end_date >= ${period_start})
+    ORDER BY employee_id, start_date DESC
   `;
 
   const contractMap = new Map();
@@ -129,14 +130,16 @@ async function computePayrun(payrunId) {
   `;
 
   const payslips = await sql`
-    SELECT p.id, p.employee_id, c.wage
+    SELECT p.id, p.employee_id, COALESCE(c.wage, 0) as wage
     FROM payslips p
-    LEFT JOIN contracts c ON (
-      c.employee_id = p.employee_id 
-      AND c.status = 'Active' 
-      AND c.start_date <= ${payrun.period_end} 
-      AND (c.end_date IS NULL OR c.end_date >= ${payrun.period_start})
-    )
+    LEFT JOIN LATERAL (
+      SELECT wage FROM contracts
+      WHERE employee_id = p.employee_id
+        AND start_date <= ${payrun.period_end}
+        AND (end_date IS NULL OR end_date >= ${payrun.period_start})
+      ORDER BY start_date DESC
+      LIMIT 1
+    ) c ON true
     WHERE p.payrun_id = ${payrunId}
   `;
 
@@ -301,6 +304,33 @@ async function validatePayrun(payrunId) {
 const notificationService = require('./notificationService');
 
 async function updatePayrunStatus(payrunId, status) {
+  const payruns = await sql`SELECT * FROM payruns WHERE id = ${payrunId}`;
+  if (payruns.length === 0) throw new Error('Payrun not found');
+  const currentPayrun = payruns[0];
+
+  if (status === 'Validated') {
+    if (currentPayrun.status === 'Draft') {
+      const err = new Error('Cannot validate a Draft payrun. Please compute payroll first.');
+      err.status = 400;
+      throw err;
+    }
+    const warnings = await validatePayrun(payrunId);
+    const criticalErrors = warnings.filter(w => w.type === 'MISSING_CONTRACT');
+    if (criticalErrors.length > 0) {
+      const err = new Error(`Validation failed: ${criticalErrors[0].message}`);
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  if (status === 'Paid') {
+    if (currentPayrun.status === 'Draft') {
+      const err = new Error('Cannot mark a Draft payrun as Paid. Please compute and validate payroll first.');
+      err.status = 400;
+      throw err;
+    }
+  }
+
   const [updated] = await sql`
     UPDATE payruns SET status = ${status} WHERE id = ${payrunId} RETURNING *
   `;
@@ -314,7 +344,7 @@ async function updatePayrunStatus(payrunId, status) {
         const chunk = slips.slice(i, i + chunkSize);
         await Promise.all(chunk.map(slip => notificationService.notifyEmployeeUser(slip.employee_id, {
           title: 'Payslip Dispatched & Paid',
-          message: `Your net salary of ₹${parseFloat(slip.net_amount || 0).toLocaleString()} for payrun "${updated.name}" is processed!`,
+          message: `Your net salary of ₹${parseFloat(slip.net_amount || 0).toLocaleString('en-IN')} for payrun "${updated.name}" is processed!`,
           type: 'payroll',
           link_tab: 'payroll'
         })));
@@ -322,7 +352,7 @@ async function updatePayrunStatus(payrunId, status) {
 
       await notificationService.notifyRoles(['admin', 'hr_manager', 'hr_payroll_manager'], {
         title: 'Payrun Finalized & Paid',
-        message: `Payrun "${updated.name}" was finalized. Total Net Paid: ₹${parseFloat(updated.total_net || 0).toLocaleString()}.`,
+        message: `Payrun "${updated.name}" was finalized. Total Net Paid: ₹${parseFloat(updated.total_net || 0).toLocaleString('en-IN')}.`,
         type: 'payroll',
         link_tab: 'payroll'
       });

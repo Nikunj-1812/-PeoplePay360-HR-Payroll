@@ -8,7 +8,11 @@ import {
   Receipt, Download, Search, RefreshCw, Filter, Eye, ChevronRight 
 } from 'lucide-react';
 
+import { useAuth } from '../context/AuthContext';
+
 export default function ReportsPage() {
+  const { user } = useAuth();
+  const isHrManager = user?.role === 'hr_manager';
   const [activeReport, setActiveReport] = useState('employees');
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -16,7 +20,7 @@ export default function ReportsPage() {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const toast = useToast();
 
-  const reportTabs = [
+  const allReportTabs = [
     { id: 'employees', label: 'Employees Report', icon: Users, endpoint: '/reports/employees' },
     { id: 'contracts', label: 'Contracts Report', icon: FileText, endpoint: '/reports/contracts' },
     { id: 'attendance', label: 'Attendance Report', icon: Clock, endpoint: '/reports/attendance' },
@@ -25,9 +29,11 @@ export default function ReportsPage() {
     { id: 'payslips', label: 'Payslip History Report', icon: FileSpreadsheet, endpoint: '/reports/payslips' }
   ];
 
+  const reportTabs = allReportTabs.filter(t => !isHrManager || !['payroll', 'payslips'].includes(t.id));
+
   const fetchReportData = async () => {
     setLoading(true);
-    const currentTab = reportTabs.find(t => t.id === activeReport);
+    const currentTab = reportTabs.find(t => t.id === activeReport) || reportTabs[0];
     if (!currentTab) return;
 
     try {

@@ -21,15 +21,32 @@ async function clockIn(employeeId) {
   const cleanId = parseInt(employeeId, 10);
   if (!cleanId || isNaN(cleanId)) throw new Error('Valid employee ID required for Check In');
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const nowISO = new Date().toISOString();
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+  const nowISO = now.toISOString();
 
   const existing = await sql`
-    SELECT * FROM attendance WHERE employee_id = ${cleanId} AND date = ${todayStr}
+    SELECT * FROM attendance 
+    WHERE employee_id = ${cleanId} 
+      AND (date = ${todayStr}::date OR (check_in IS NOT NULL AND check_in::date = ${todayStr}::date))
+    ORDER BY id DESC
   `;
 
   if (existing.length > 0) {
-    return existing[0];
+    const rec = existing[0];
+    if (rec.check_in && !rec.check_out) {
+      const err = new Error('You are already checked in for today.');
+      err.status = 400;
+      throw err;
+    }
+    if (rec.check_in && rec.check_out) {
+      const err = new Error('You have already completed attendance for today.');
+      err.status = 400;
+      throw err;
+    }
   }
 
   const [rec] = await sql`
@@ -44,41 +61,43 @@ async function clockOut(employeeId) {
   const cleanId = parseInt(employeeId, 10);
   if (!cleanId || isNaN(cleanId)) throw new Error('Valid employee ID required for Check Out');
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const nowISO = new Date().toISOString();
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+  const nowISO = now.toISOString();
 
   const existing = await sql`
-    SELECT * FROM attendance WHERE employee_id = ${cleanId} AND date = ${todayStr}
+    SELECT * FROM attendance 
+    WHERE employee_id = ${cleanId} 
+      AND check_in IS NOT NULL
+      AND check_out IS NULL
+      AND (date = ${todayStr}::date OR (check_in IS NOT NULL AND check_in::date = ${todayStr}::date))
+    ORDER BY id DESC
   `;
 
   if (existing.length === 0) {
-    const [newIn] = await sql`
-      INSERT INTO attendance (employee_id, date, check_in, check_out, worked_hours, status)
-      VALUES (${cleanId}, ${todayStr}, ${nowISO}, ${nowISO}, 8.00, 'Present')
-      RETURNING *
-    `;
-    return newIn;
+    const err = new Error('No active Check In found for today. Please Check In first.');
+    err.status = 400;
+    throw err;
   }
 
-  if (existing[0].check_out) {
-    return existing[0];
-  }
-
-  let checkInTime = existing[0].check_in ? new Date(existing[0].check_in).getTime() : Date.now();
+  const rec = existing[0];
+  let checkInTime = rec.check_in ? new Date(rec.check_in).getTime() : Date.now();
   if (isNaN(checkInTime)) checkInTime = Date.now() - (8 * 3600 * 1000);
   const checkOutTime = Date.now();
-  let workedHours = Math.max(0.5, parseFloat(((checkOutTime - checkInTime) / (1000 * 60 * 60)).toFixed(2)));
-  if (isNaN(workedHours)) workedHours = 8.00;
+  let workedHours = Math.max(0.01, parseFloat(((checkOutTime - checkInTime) / (1000 * 60 * 60)).toFixed(2)));
 
-  const [rec] = await sql`
+  const [updated] = await sql`
     UPDATE attendance SET
       check_out = ${nowISO},
       worked_hours = ${workedHours},
       status = 'Present'
-    WHERE id = ${existing[0].id}
+    WHERE id = ${rec.id}
     RETURNING *
   `;
-  return rec;
+  return updated;
 }
 
 async function correctAttendance(id, data) {

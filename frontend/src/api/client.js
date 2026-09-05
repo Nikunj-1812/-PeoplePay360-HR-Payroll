@@ -98,6 +98,7 @@ function getTagsForUrl(url) {
   if (lower.includes('/salary')) tags.push('salary', 'payruns', 'dashboard');
   if (lower.includes('/payrun')) tags.push('payruns', 'dashboard', 'employees');
   if (lower.includes('/schedule')) tags.push('schedules', 'attendance', 'employees');
+  if (lower.includes('/notification')) tags.push('notifications');
   return tags;
 }
 

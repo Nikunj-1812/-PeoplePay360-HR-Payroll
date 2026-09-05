@@ -7,9 +7,12 @@ function createTransporter() {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
+    connectionTimeout: 3000,
+    greetingTimeout: 3000,
+    socketTimeout: 3000,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD
+      user: process.env.SMTP_USER || 'demo@peoplepay360.com',
+      pass: process.env.SMTP_PASSWORD || 'demo_pass'
     }
   });
 }
@@ -29,18 +32,18 @@ async function sendBulkPayslips(payrunId) {
 
   const transporter = createTransporter();
 
-  for (const slip of payslips) {
+  await Promise.all(payslips.map(async (slip) => {
     if (!slip.email || !slip.email.includes('@')) {
       failedCount++;
       deliveryResults.push({ id: slip.id, email: slip.email, status: 'Failed', reason: 'Missing or invalid email' });
-      continue;
+      return;
     }
 
     try {
       const pdfBuffer = await generatePayslipPDF(slip.id);
 
       await transporter.sendMail({
-        from: `"${process.env.MAIL_FROM_NAME || 'PeoplePay360 HR'}" <${process.env.MAIL_FROM_EMAIL || process.env.SMTP_USER}>`,
+        from: `"${process.env.MAIL_FROM_NAME || 'PeoplePay360 HR'}" <${process.env.MAIL_FROM_EMAIL || process.env.SMTP_USER || 'hr@peoplepay360.com'}>`,
         to: slip.email,
         subject: `Payslip Statement - ${slip.payrun_name}`,
         html: `<p>Dear <strong>${slip.first_name} ${slip.last_name}</strong>,</p>
@@ -65,7 +68,7 @@ async function sendBulkPayslips(payrunId) {
       sentCount++;
       deliveryResults.push({ id: slip.id, email: slip.email, status: 'Sent (Simulated)', warning: err.message });
     }
-  }
+  }));
 
   return {
     total: payslips.length,

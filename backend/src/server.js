@@ -103,11 +103,18 @@ app.use((err, _req, res, _next) => {
 async function startServer() {
   await initializeDatabase();
   initSocket(server, configuredOrigins);
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`[Server] Port ${port} is already in use. Stop the existing backend before starting another one.`);
+    } else {
+      console.error('[Server] Failed to start:', error);
+    }
+    process.exitCode = 1;
+  });
   server.listen(port, () => {
     console.log(`PeoplePay360 Backend running on http://localhost:${port}`);
     console.log(`Neon Database Connected.`);
   });
-  setInterval(() => {}, 60000);
 }
 
 if (require.main === module) {

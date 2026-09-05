@@ -258,7 +258,15 @@ async function initializeDatabase() {
     )
   `;
 
-  console.log('[DB] Core tables created/updated. Seeding initial data...');
+  // 16. Performance Indexes
+  await sql`CREATE INDEX IF NOT EXISTS idx_contracts_emp_id ON contracts(employee_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, date)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_time_off_requests_emp ON time_off_requests(employee_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_payslips_payrun_emp ON payslips(payrun_id, employee_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_payslip_lines_payslip ON payslip_lines(payslip_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read)`;
+
+  console.log('[DB] Core tables & performance indexes created/updated. Seeding initial data...');
   await seedData();
   await ensureDemoUsers();
   console.log('[DB] Seeding completed.');

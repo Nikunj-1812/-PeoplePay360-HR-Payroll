@@ -86,7 +86,17 @@ async function createUser(data) {
   const { name, email, password, role, employee_id } = data;
   const cleanEmail = String(email).trim().toLowerCase();
   const passwordHash = await bcrypt.hash(password || 'PeoplePay@123', 10);
-  const targetEmpId = employee_id ? parseInt(employee_id, 10) : null;
+  let targetEmpId = employee_id ? parseInt(employee_id, 10) : null;
+
+  // Link users created from an existing employee email automatically.
+  if (!targetEmpId) {
+    const [matchingEmployee] = await sql`
+      SELECT id FROM employees
+      WHERE LOWER(TRIM(email)) = ${cleanEmail}
+      LIMIT 1
+    `;
+    targetEmpId = matchingEmployee?.id || null;
+  }
 
   const [user] = await sql`
     INSERT INTO users (name, email, password_hash, role, employee_id)

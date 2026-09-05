@@ -5,7 +5,10 @@ import { CalendarDays, Plus, Clock, Users, Trash2 } from 'lucide-react';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CenteredSpinner } from '../components/ui/Loading';
 
+import { useAuth } from '../context/AuthContext';
+
 export default function SchedulesPage() {
+  const { user } = useAuth();
   const toast = useToast();
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,6 +19,8 @@ export default function SchedulesPage() {
   const [breakHours, setBreakHours] = useState(1);
   const [workDays, setWorkDays] = useState(5);
   const [deleteConfig, setDeleteConfig] = useState(null);
+
+  const canManageSchedules = ['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin'].includes(user?.role || '');
 
   // Live weekly hours calculation: (end - start - break) * workDays
   const calculateShiftHours = () => {
@@ -100,9 +105,11 @@ export default function SchedulesPage() {
           <h1 style={{ fontSize: '22px', fontWeight: '700' }}>Working Schedules</h1>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Weekly working patterns & automated hours calculation</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn btn-primary">
-          <Plus size={16} /> Create Schedule
-        </button>
+        {canManageSchedules && (
+          <button onClick={() => setShowModal(true)} className="btn btn-primary">
+            <Plus size={16} /> Create Schedule
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -135,14 +142,16 @@ export default function SchedulesPage() {
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Users size={14} /> {s.employee_count || 0} Assigned Employees</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ color: '#10B981', fontWeight: '600' }}>✓ Auto-Calculated</span>
-                  <button 
-                    onClick={(e) => handleDeleteSchedule(s, e)}
-                    className="btn btn-secondary" 
-                    title="Delete Schedule"
-                    style={{ padding: '4px 6px', color: 'var(--danger)' }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                  {canManageSchedules && (
+                    <button 
+                      onClick={(e) => handleDeleteSchedule(s, e)}
+                      className="btn btn-secondary" 
+                      title="Delete Schedule"
+                      style={{ padding: '4px 6px', color: 'var(--danger)' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
