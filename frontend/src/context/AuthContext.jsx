@@ -22,8 +22,8 @@ export function AuthProvider({ children }) {
         // Auto-login default demo user (HR Payroll Manager)
         try {
           const loginRes = await api.post('/auth/login', {
-            email: 'payroll.manager@peoplepay360.com',
-            password: 'password123'
+            email: 'payrollmanager@peoplepay360.com',
+            password: 'PayrollManager@123'
           });
           localStorage.setItem('pp360_token', loginRes.token);
           setUser(loginRes.user);

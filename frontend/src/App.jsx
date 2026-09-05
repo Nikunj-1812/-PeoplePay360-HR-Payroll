@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Shell from './components/layout/Shell';
+import LoginPage from './components/auth/LoginPage';
 
 import DashboardPage from './pages/DashboardPage';
 import EmployeesPage from './pages/EmployeesPage';
@@ -14,7 +15,29 @@ import PayrunsPage from './pages/PayrunsPage';
 import SettingsPage from './pages/SettingsPage';
 
 function AppContent() {
+  const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        height: '100vh',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'var(--surface)',
+        color: 'var(--text-muted)',
+        fontSize: '14px',
+        fontWeight: '600'
+      }}>
+        Loading PeoplePay360 HRMS...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
 
   const renderContent = () => {
     switch (activeTab) {

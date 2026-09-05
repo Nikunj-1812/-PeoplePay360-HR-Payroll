@@ -247,7 +247,37 @@ async function initializeDatabase() {
 
   console.log('[DB] Core tables created/updated. Seeding initial data...');
   await seedData();
+  await ensureDemoUsers();
   console.log('[DB] Seeding completed.');
+}
+
+async function ensureDemoUsers() {
+  const emp1 = await sql`SELECT id FROM employees ORDER BY id ASC LIMIT 1`;
+  const empId1 = emp1.length > 0 ? emp1[0].id : null;
+  const emp2 = await sql`SELECT id FROM employees ORDER BY id ASC OFFSET 1 LIMIT 1`;
+  const empId2 = emp2.length > 0 ? emp2[0].id : empId1;
+  const emp3 = await sql`SELECT id FROM employees ORDER BY id ASC OFFSET 2 LIMIT 1`;
+  const empId3 = emp3.length > 0 ? emp3[0].id : empId1;
+
+  const passAdmin = await bcrypt.hash('Admin@123', 10);
+  const passHRMgr = await bcrypt.hash('HRManager@123', 10);
+  const passPRUser = await bcrypt.hash('PayrollUser@123', 10);
+  const passPRMgr = await bcrypt.hash('PayrollManager@123', 10);
+  const passEmp = await bcrypt.hash('Employee@123', 10);
+  const passDefault = await bcrypt.hash('password123', 10);
+
+  await sql`
+    INSERT INTO users (name, email, password_hash, role, employee_id)
+    VALUES
+      ('Admin User', 'admin@peoplepay360.com', ${passAdmin}, 'admin', ${empId1}),
+      ('HR Payroll Manager', 'payrollmanager@peoplepay360.com', ${passPRMgr}, 'hr_payroll_manager', ${empId3}),
+      ('HR Payroll User', 'payrolluser@peoplepay360.com', ${passPRUser}, 'hr_payroll_user', ${empId3}),
+      ('HR Manager', 'hrmanager@peoplepay360.com', ${passHRMgr}, 'hr_manager', ${empId2}),
+      ('Employee User', 'employee@peoplepay360.com', ${passEmp}, 'employee', ${empId1}),
+      ('HR Payroll Manager (Alt)', 'payroll.manager@peoplepay360.com', ${passDefault}, 'hr_payroll_manager', ${empId3}),
+      ('HR Payroll User (Alt)', 'payroll.user@peoplepay360.com', ${passDefault}, 'payroll.user@peoplepay360.com' ? ${passDefault} : ${passDefault}, ${empId3})
+    ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, employee_id = EXCLUDED.employee_id
+  `;
 }
 
 async function seedData() {
@@ -298,20 +328,29 @@ async function seedData() {
   const emp4 = empRecords.find(e => e.emp_id === 'EMP004');
   const emp5 = empRecords.find(e => e.emp_id === 'EMP005');
 
-  // 4. Default Users (Role Accounts)
-  const defaultPassword = await bcrypt.hash('password123', 10);
+  // 4. Default Users (Role Accounts - Exact required demo accounts)
+  const passAdmin = await bcrypt.hash('Admin@123', 10);
+  const passHRMgr = await bcrypt.hash('HRManager@123', 10);
+  const passPRUser = await bcrypt.hash('PayrollUser@123', 10);
+  const passPRMgr = await bcrypt.hash('PayrollManager@123', 10);
+  const passEmp = await bcrypt.hash('Employee@123', 10);
+  const passDefault = await bcrypt.hash('password123', 10);
   
-  // Clean up any test user from earlier
+  // Clean up legacy test users
   await sql`DELETE FROM users WHERE email = 'test.user@oodo.local'`;
 
   await sql`
     INSERT INTO users (name, email, password_hash, role, employee_id)
     VALUES
-      ('Admin User', 'admin@peoplepay360.com', ${defaultPassword}, 'admin', ${emp1.id}),
-      ('HR Payroll Manager', 'payroll.manager@peoplepay360.com', ${defaultPassword}, 'hr_payroll_manager', ${emp3.id}),
-      ('HR Payroll User', 'payroll.user@peoplepay360.com', ${defaultPassword}, 'hr_payroll_user', ${emp3.id}),
-      ('HR Manager', 'hr.manager@peoplepay360.com', ${defaultPassword}, 'hr_manager', ${emp2.id}),
-      ('Aarav Sharma (Employee)', 'aarav.sharma@peoplepay360.com', ${defaultPassword}, 'employee', ${emp1.id})
+      ('Admin User', 'admin@peoplepay360.com', ${passAdmin}, 'admin', ${emp1.id}),
+      ('HR Payroll Manager', 'payrollmanager@peoplepay360.com', ${passPRMgr}, 'hr_payroll_manager', ${emp3.id}),
+      ('HR Payroll User', 'payrolluser@peoplepay360.com', ${passPRUser}, 'hr_payroll_user', ${emp3.id}),
+      ('HR Manager', 'hrmanager@peoplepay360.com', ${passHRMgr}, 'hr_manager', ${emp2.id}),
+      ('Employee User', 'employee@peoplepay360.com', ${passEmp}, 'employee', ${emp1.id}),
+      ('HR Payroll Manager (Alt)', 'payroll.manager@peoplepay360.com', ${passDefault}, 'hr_payroll_manager', ${emp3.id}),
+      ('HR Payroll User (Alt)', 'payroll.user@peoplepay360.com', ${passDefault}, 'hr_payroll_user', ${emp3.id}),
+      ('HR Manager (Alt)', 'hr.manager@peoplepay360.com', ${passDefault}, 'hr_manager', ${emp2.id}),
+      ('Aarav Sharma (Employee Alt)', 'aarav.sharma@peoplepay360.com', ${passDefault}, 'employee', ${emp1.id})
     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = EXCLUDED.role, employee_id = EXCLUDED.employee_id
   `;
 

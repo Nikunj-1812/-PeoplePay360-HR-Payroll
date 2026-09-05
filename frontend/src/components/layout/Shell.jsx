@@ -4,11 +4,11 @@ import { useTheme } from '../../context/ThemeContext';
 import { 
   LayoutDashboard, Users, FileText, CalendarDays, Clock, 
   WalletCards, Receipt, Sliders, Settings, Sun, Moon, 
-  Search, Bell, UserCheck, ShieldCheck, ChevronDown
+  Search, Bell, UserCheck, ShieldCheck, ChevronDown, LogOut
 } from 'lucide-react';
 
 export default function Shell({ activeTab, setActiveTab, children }) {
-  const { user, switchRole } = useAuth();
+  const { user, switchRole, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   // Role permissions filter
@@ -84,13 +84,40 @@ export default function Shell({ activeTab, setActiveTab, children }) {
         </nav>
 
         {/* Sidebar Footer / User Card */}
-        <div style={{ padding: '16px', borderTop: '1px solid rgba(179, 207, 229, 0.12)', backgroundColor: '#102744' }}>
-          <div style={{ fontSize: '12px', fontWeight: '600', color: '#B3CFE5' }}>
-            {user?.name || 'Authorized User'}
+        <div style={{
+          padding: '16px',
+          borderTop: '1px solid rgba(179, 207, 229, 0.12)',
+          backgroundColor: '#102744',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '600', color: '#B3CFE5' }}>
+              {user?.name || 'Authorized User'}
+            </div>
+            <div style={{ fontSize: '11px', color: '#4A7FA7', marginTop: '2px', textTransform: 'capitalize' }}>
+              Role: {currentRole.replace(/_/g, ' ')}
+            </div>
           </div>
-          <div style={{ fontSize: '11px', color: '#4A7FA7', marginTop: '2px', textTransform: 'capitalize' }}>
-            Role: {currentRole.replace(/_/g, ' ')}
-          </div>
+          <button
+            onClick={logout}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#F87171',
+              cursor: 'pointer',
+              padding: '6px',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 150ms ease'
+            }}
+            title="Log Out of Account"
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </aside>
 
@@ -150,9 +177,23 @@ export default function Shell({ activeTab, setActiveTab, children }) {
               {theme === 'light' ? 'Dark' : 'Light'}
             </button>
 
-            {/* Notifications */}
-            <button className="btn btn-secondary" style={{ padding: '6px 8px' }}>
-              <Bell size={16} color="var(--text-main)" />
+            {/* Log Out Button */}
+            <button
+              onClick={logout}
+              className="btn btn-secondary"
+              style={{
+                padding: '6px 12px',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                color: 'var(--danger)',
+                borderColor: 'rgba(239, 68, 68, 0.3)'
+              }}
+              title="Log Out of System"
+            >
+              <LogOut size={15} color="var(--danger)" />
+              <span>Log Out</span>
             </button>
           </div>
         </header>
