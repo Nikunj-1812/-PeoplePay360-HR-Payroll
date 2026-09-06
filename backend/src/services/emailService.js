@@ -79,7 +79,8 @@ async function sendBulkPayslips(payrunId) {
 }
 
 async function sendOnboardingEmail({ employeeName, employeeEmail, temporaryPassword, resetToken }) {
-  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+  const defaultUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5173';
+  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || defaultUrl;
   const setupUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
   const transporter = createTransporter();
 
@@ -132,7 +133,8 @@ async function sendOnboardingEmail({ employeeName, employeeEmail, temporaryPassw
 }
 
 async function sendPasswordResetEmail({ email, name, resetToken }) {
-  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+  const defaultUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5173';
+  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || defaultUrl;
   const setupUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
   const transporter = createTransporter();
 

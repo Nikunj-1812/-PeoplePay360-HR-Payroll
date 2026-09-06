@@ -1,19 +1,7 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/dashboard", "destination": "/index.html" },
-    { "source": "/employees", "destination": "/index.html" },
-    { "source": "/contracts", "destination": "/index.html" },
-    { "source": "/schedules", "destination": "/index.html" },
-    { "source": "/attendance", "destination": "/index.html" },
-    { "source": "/time-off", "destination": "/index.html" },
-    { "source": "/payroll", "destination": "/index.html" },
-    { "source": "/structures", "destination": "/index.html" },
-    { "source": "/salary-structures", "destination": "/index.html" },
-    { "source": "/reports", "destination": "/index.html" },
-    { "source": "/settings", "destination": "/index.html" },
-    { "source": "/login", "destination": "/index.html" },
-    { "source": "/auth", "destination": "/index.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
