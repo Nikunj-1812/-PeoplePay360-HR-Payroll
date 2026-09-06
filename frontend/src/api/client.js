@@ -2,7 +2,7 @@ import axios from 'axios';
 import { getCacheKey, getCached, setCached, invalidateCache, clearAllCache } from './cache';
 
 // Dual backend configuration with smart environment resolution
-const DEPLOYED_URL = import.meta.env.VITE_DEPLOYED_API_URL || import.meta.env.VITE_API_URL || '';
+const DEPLOYED_URL = import.meta.env.VITE_DEPLOYED_API_URL || import.meta.env.VITE_API_URL || 'https://peoplepay-360.onrender.com/api';
 const LOCAL_URL = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:5000/api';
 
 const isLocalhost = typeof window !== 'undefined' && 
