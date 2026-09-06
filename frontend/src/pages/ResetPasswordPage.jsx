@@ -42,10 +42,12 @@ export default function ResetPasswordPage() {
       .catch((err) => {
         const errMsg = err.message || '';
         const status = err.status || err.response?.status;
-        if (status === 405 || errMsg.includes('405')) {
-          setVerifyError("We couldn't process the password reset request. Please try again or request a new reset link.");
-        } else if (errMsg.toLowerCase().includes('network') || err.code === 'ERR_NETWORK') {
+        if (errMsg.toLowerCase().includes('network') || err.code === 'ERR_NETWORK') {
           setVerifyError('Unable to connect to PeoplePay360 backend service. Please check backend server deployment status.');
+        } else if (status === 404 || status === 405) {
+          setVerifyError(`Unable to reach password reset service (HTTP ${status}). Please try again or request a new reset link.`);
+        } else if (status >= 500) {
+          setVerifyError('The password reset service is temporarily unavailable. Please try again later.');
         } else {
           setVerifyError(errMsg || 'This password setup link is invalid or has expired.');
         }
@@ -116,8 +118,8 @@ export default function ResetPasswordPage() {
                 <h2 className="text-lg font-semibold text-rose-300">
                   {verifyError?.toLowerCase().includes('connect') || verifyError?.toLowerCase().includes('network')
                     ? 'Network Connection Error'
-                    : verifyError?.toLowerCase().includes('couldn\'t process')
-                    ? 'Request Unable to Process'
+                    : verifyError?.toLowerCase().includes('unable to reach') || verifyError?.toLowerCase().includes('unavailable')
+                    ? 'Service Unavailable'
                     : verifyError?.toLowerCase().includes('expired')
                     ? 'Link Expired'
                     : verifyError?.toLowerCase().includes('used')

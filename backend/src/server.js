@@ -90,8 +90,9 @@ app.get('/api/health', async (_req, res) => {
   });
 });
 
-// Mount Main API Routes
+// Mount Main API Routes (supports both /api prefix and direct / route for serverless rewrites)
 app.use('/api', apiRouter);
+app.use('/', apiRouter);
 
 // Global Error Handler
 app.use((err, _req, res, _next) => {
