@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { LogIn, Shield, Users, Wallet, ShieldCheck, ArrowLeft, X } from 'lucide-react';
@@ -26,10 +26,10 @@ export default function LoginPage({ onCancel }) {
     setForgotLoading(true);
     setForgotMessage('');
     try {
-      const res = await axios.post('/api/auth/forgot-password', { email: forgotEmail });
-      setForgotMessage(res.data?.message || 'If an account exists for that email, a password reset link has been dispatched.');
+      const res = await api.post('/auth/forgot-password', { email: forgotEmail });
+      setForgotMessage(res?.message || 'If an account exists for that email, a password reset link has been dispatched.');
     } catch (err) {
-      setForgotMessage(err.response?.data?.message || 'Failed to request password reset.');
+      setForgotMessage(err.message || 'Failed to request password reset.');
     } finally {
       setForgotLoading(false);
     }

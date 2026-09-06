@@ -36,7 +36,7 @@ async function testOnboardingWorkflow() {
   console.log('   - reset_token_hash length:', dbUser.reset_token_hash ? dbUser.reset_token_hash.length : 0);
   console.log('   - reset_token_expires_at:', dbUser.reset_token_expires_at);
 
-  if (!dbUser.must_change_password) throw new Error('must_change_password should be TRUE!');
+  if (dbUser.must_change_password !== false) throw new Error('must_change_password should be FALSE by default!');
   if (!dbUser.password_hash.startsWith('$2')) throw new Error('Password hash is not bcrypt!');
   if (!dbUser.reset_token_hash) throw new Error('reset_token_hash missing!');
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Lock, CheckCircle2, AlertTriangle, ShieldCheck, ArrowLeft, Loader2 } from 'lucide-react';
 import PasswordRequirements from '../components/auth/PasswordRequirements';
 import { validatePassword } from '../utils/passwordPolicy';
-import axios from 'axios';
+import api from '../api/client';
 
 export default function ResetPasswordPage() {
   const [token, setToken] = useState('');
@@ -29,18 +29,18 @@ export default function ResetPasswordPage() {
     }
 
     setToken(tokenParam);
-    axios
-      .post('/api/auth/verify-reset-token', { token: tokenParam })
+    api
+      .post('/auth/verify-reset-token', { token: tokenParam })
       .then((res) => {
-        if (res.data && res.data.valid) {
+        if (res && res.valid) {
           setTokenValid(true);
-          setUserInfo(res.data.user);
+          setUserInfo(res.user);
         } else {
-          setVerifyError(res.data?.message || 'This password reset link is invalid or has expired.');
+          setVerifyError(res?.message || 'This password reset link is invalid or has expired.');
         }
       })
       .catch((err) => {
-        setVerifyError(err.response?.data?.message || 'Invalid or expired setup token.');
+        setVerifyError(err.message || 'Invalid or expired setup token.');
       })
       .finally(() => {
         setVerifying(false);
@@ -59,19 +59,19 @@ export default function ResetPasswordPage() {
     setSubmitError('');
 
     try {
-      const res = await axios.post('/api/auth/reset-password', {
+      const res = await api.post('/auth/reset-password', {
         token,
         newPassword,
         confirmPassword
       });
 
-      if (res.data && res.data.success) {
+      if (res && res.success) {
         setSuccess(true);
       } else {
-        setSubmitError(res.data?.message || 'Failed to set password.');
+        setSubmitError(res?.message || 'Failed to set password.');
       }
     } catch (err) {
-      setSubmitError(err.response?.data?.message || 'An error occurred while setting your password.');
+      setSubmitError(err.message || 'An error occurred while setting your password.');
     } finally {
       setSubmitting(false);
     }

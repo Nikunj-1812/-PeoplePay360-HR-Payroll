@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ShieldAlert, Eye, EyeOff, Lock, Loader2, CheckCircle2 } from 'lucide-react';
 import PasswordRequirements from './PasswordRequirements';
 import { validatePassword } from '../../utils/passwordPolicy';
-import axios from 'axios';
+import api from '../../api/client';
 
 export default function ForcedPasswordChangeModal({ user, onPasswordChanged }) {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -29,23 +29,22 @@ export default function ForcedPasswordChangeModal({ user, onPasswordChanged }) {
     setError('');
 
     try {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const res = await axios.post(
-        '/api/auth/change-password',
-        { currentPassword, newPassword, confirmPassword },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const res = await api.post('/auth/change-password', {
+        currentPassword,
+        newPassword,
+        confirmPassword
+      });
 
-      if (res.data && res.data.success) {
+      if (res && res.success) {
         setSuccess(true);
         setTimeout(() => {
           if (onPasswordChanged) onPasswordChanged();
         }, 1500);
       } else {
-        setError(res.data?.message || 'Failed to update password.');
+        setError(res?.message || 'Failed to update password.');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'An error occurred while setting your new password.');
+      setError(err.message || 'An error occurred while setting your new password.');
     } finally {
       setLoading(false);
     }
