@@ -373,6 +373,21 @@ export default function PayrunsPage() {
     }
   };
 
+  const handleSendSinglePayslipEmail = async (slipId, empName, e) => {
+    if (e) e.stopPropagation();
+    try {
+      toast.info(`Sending email with PDF attachment to ${empName || "employee"}...`);
+      const res = await api.post(`/payslips/${slipId}/send-email`);
+      if (res && res.data?.email) {
+        toast.success(`Payslip PDF email successfully sent to ${res.data.email}!`);
+      } else {
+        toast.success(`Payslip PDF email sent successfully!`);
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to send payslip email.");
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       {/* Subtab Navigation Bar */}
@@ -551,6 +566,15 @@ export default function PayrunsPage() {
                             style={{ padding: "4px 8px", fontSize: "11px" }}
                           >
                             <Download size={12} /> PDF
+                          </button>
+                          <button
+                            onClick={(e) =>
+                              handleSendSinglePayslipEmail(s.id, s.employee_name, e)
+                            }
+                            className="btn btn-secondary"
+                            style={{ padding: "4px 8px", fontSize: "11px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                          >
+                            <Mail size={12} /> Email
                           </button>
                         </div>
                       </td>

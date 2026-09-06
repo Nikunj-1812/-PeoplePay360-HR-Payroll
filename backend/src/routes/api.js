@@ -918,6 +918,13 @@ router.get('/payslips/:id/pdf', authenticateToken, asyncHandler(async (req, res)
   res.send(pdfBuffer);
 }));
 
+// POST /api/payslips/:id/send-email
+router.post('/payslips/:id/send-email', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
+  const result = await emailService.sendSinglePayslip(req.params.id);
+  await redisService.invalidatePayruns();
+  res.json({ success: true, data: result });
+}));
+
 // ==========================================
 // 10. REPORTS MODULE ROUTES
 // ==========================================

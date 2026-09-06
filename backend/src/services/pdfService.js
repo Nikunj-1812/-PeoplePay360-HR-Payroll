@@ -54,6 +54,7 @@ async function generatePayslipPDF(payslipId) {
         const pdfData = Buffer.concat(buffers);
         resolve(pdfData);
       });
+      doc.on('error', (err) => reject(err));
 
       const PAGE_WIDTH = 595.28;
       const PAGE_HEIGHT = 841.89;

@@ -17,6 +17,89 @@ function createTransporter() {
   });
 }
 
+function sanitizeFilename(name) {
+  return String(name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+async function sendSinglePayslip(payslipId) {
+  const payslips = await sql`
+    SELECT p.id, p.employee_id, e.email, e.first_name, e.last_name, pr.name as payrun_name
+    FROM payslips p
+    JOIN employees e ON p.employee_id = e.id
+    JOIN payruns pr ON p.payrun_id = pr.id
+    WHERE p.id = ${payslipId}
+  `;
+
+  if (payslips.length === 0) {
+    throw new Error('Payslip not found');
+  }
+
+  const slip = payslips[0];
+  if (!slip.email || !slip.email.includes('@')) {
+    throw new Error('Employee email address is missing or invalid');
+  }
+
+  const pdfBuffer = await generatePayslipPDF(slip.id);
+  const cleanFirst = sanitizeFilename(slip.first_name || 'Employee');
+  const cleanLast = sanitizeFilename(slip.last_name || '');
+  const filename = `Payslip_${cleanFirst}${cleanLast ? '_' + cleanLast : ''}_${slip.id}.pdf`;
+
+  const transporter = createTransporter();
+  const defaultUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5173';
+  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || defaultUrl;
+
+  const html = `
+    <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; background-color: #F6FAFD; border: 1px solid #B3CFE5; border-radius: 12px; padding: 24px; color: #0A1931;">
+      <div style="text-align: center; padding-bottom: 16px; border-bottom: 2px solid #B3CFE5;">
+        <h1 style="color: #0A1931; font-size: 24px; margin: 0;">PeoplePay360</h1>
+        <p style="color: #4A7FA7; font-size: 13px; margin: 4px 0 0 0;">HR & Payroll Operations Platform</p>
+      </div>
+
+      <div style="padding: 20px 0;">
+        <h2 style="font-size: 18px; color: #0A1931; margin-top: 0;">Payslip Statement - ${slip.payrun_name}</h2>
+        <p style="font-size: 14px; line-height: 1.6;">Dear <strong>${slip.first_name} ${slip.last_name}</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.6;">Your official payslip statement for <strong>${slip.payrun_name}</strong> is attached to this email as a PDF document.</p>
+        
+        <div style="background-color: #FFFFFF; border: 1px solid #B3CFE5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 4px 0; font-size: 13px;"><strong>Employee:</strong> ${slip.first_name} ${slip.last_name}</p>
+          <p style="margin: 4px 0; font-size: 13px;"><strong>Pay Period / Payrun:</strong> ${slip.payrun_name}</p>
+          <p style="margin: 4px 0; font-size: 13px;"><strong>Attached PDF File:</strong> <code style="background: #F6FAFD; padding: 2px 6px; border-radius: 4px; color: #1A3D63;">${filename}</code></p>
+        </div>
+
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${baseUrl}" style="background-color: #B3CFE5; color: #0A1931; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 24px; border-radius: 6px; display: inline-block;">
+            Open PeoplePay360 Platform →
+          </a>
+        </div>
+
+        <p style="font-size: 12px; color: #4A7FA7;">You can download, view, or print the attached PDF directly from your email inbox.</p>
+      </div>
+
+      <div style="text-align: center; padding-top: 16px; border-top: 1px solid #B3CFE5; font-size: 12px; color: #4A7FA7;">
+        <p style="margin: 0;">PeoplePay360 Payroll Team | Confidential Payroll Document</p>
+      </div>
+    </div>
+  `;
+
+  await transporter.sendMail({
+    from: `"${process.env.MAIL_FROM_NAME || 'PeoplePay360 HR'}" <${process.env.MAIL_FROM_EMAIL || process.env.SMTP_USER || 'hr@peoplepay360.com'}>`,
+    to: slip.email,
+    subject: `Payslip Statement - ${slip.payrun_name}`,
+    html,
+    attachments: [
+      {
+        filename,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+        disposition: 'attachment'
+      }
+    ]
+  });
+
+  await sql`UPDATE payslips SET status = 'Sent', sent_at = NOW() WHERE id = ${slip.id}`;
+  return { success: true, email: slip.email, filename };
+}
+
 async function sendBulkPayslips(payrunId) {
   const payslips = await sql`
     SELECT p.id, p.employee_id, e.email, e.first_name, e.last_name, pr.name as payrun_name
@@ -31,6 +114,8 @@ async function sendBulkPayslips(payrunId) {
   const deliveryResults = [];
 
   const transporter = createTransporter();
+  const defaultUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:5173';
+  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || defaultUrl;
 
   await Promise.all(payslips.map(async (slip) => {
     if (!slip.email || !slip.email.includes('@')) {
@@ -41,19 +126,54 @@ async function sendBulkPayslips(payrunId) {
 
     try {
       const pdfBuffer = await generatePayslipPDF(slip.id);
+      const cleanFirst = sanitizeFilename(slip.first_name || 'Employee');
+      const cleanLast = sanitizeFilename(slip.last_name || '');
+      const filename = `Payslip_${cleanFirst}${cleanLast ? '_' + cleanLast : ''}_${slip.id}.pdf`;
+
+      const html = `
+        <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; background-color: #F6FAFD; border: 1px solid #B3CFE5; border-radius: 12px; padding: 24px; color: #0A1931;">
+          <div style="text-align: center; padding-bottom: 16px; border-bottom: 2px solid #B3CFE5;">
+            <h1 style="color: #0A1931; font-size: 24px; margin: 0;">PeoplePay360</h1>
+            <p style="color: #4A7FA7; font-size: 13px; margin: 4px 0 0 0;">HR & Payroll Operations Platform</p>
+          </div>
+
+          <div style="padding: 20px 0;">
+            <h2 style="font-size: 18px; color: #0A1931; margin-top: 0;">Payslip Statement - ${slip.payrun_name}</h2>
+            <p style="font-size: 14px; line-height: 1.6;">Dear <strong>${slip.first_name} ${slip.last_name}</strong>,</p>
+            <p style="font-size: 14px; line-height: 1.6;">Your official payslip statement for <strong>${slip.payrun_name}</strong> is attached to this email as a PDF document.</p>
+            
+            <div style="background-color: #FFFFFF; border: 1px solid #B3CFE5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+              <p style="margin: 4px 0; font-size: 13px;"><strong>Employee:</strong> ${slip.first_name} ${slip.last_name}</p>
+              <p style="margin: 4px 0; font-size: 13px;"><strong>Pay Period / Payrun:</strong> ${slip.payrun_name}</p>
+              <p style="margin: 4px 0; font-size: 13px;"><strong>Attached PDF File:</strong> <code style="background: #F6FAFD; padding: 2px 6px; border-radius: 4px; color: #1A3D63;">${filename}</code></p>
+            </div>
+
+            <div style="text-align: center; margin: 24px 0;">
+              <a href="${baseUrl}" style="background-color: #B3CFE5; color: #0A1931; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 24px; border-radius: 6px; display: inline-block;">
+                Open PeoplePay360 Platform →
+              </a>
+            </div>
+
+            <p style="font-size: 12px; color: #4A7FA7;">You can download, view, or print the attached PDF directly from your email inbox.</p>
+          </div>
+
+          <div style="text-align: center; padding-top: 16px; border-top: 1px solid #B3CFE5; font-size: 12px; color: #4A7FA7;">
+            <p style="margin: 0;">PeoplePay360 Payroll Team | Confidential Payroll Document</p>
+          </div>
+        </div>
+      `;
 
       await transporter.sendMail({
         from: `"${process.env.MAIL_FROM_NAME || 'PeoplePay360 HR'}" <${process.env.MAIL_FROM_EMAIL || process.env.SMTP_USER || 'hr@peoplepay360.com'}>`,
         to: slip.email,
         subject: `Payslip Statement - ${slip.payrun_name}`,
-        html: `<p>Dear <strong>${slip.first_name} ${slip.last_name}</strong>,</p>
-               <p>Your payslip for <strong>${slip.payrun_name}</strong> is ready and attached to this email.</p>
-               <br/><p>Best regards,<br/><strong>PeoplePay360 Payroll Team</strong></p>`,
+        html,
         attachments: [
           {
-            filename: `Payslip_${slip.first_name}_${slip.last_name}.pdf`,
+            filename,
             content: pdfBuffer,
-            contentType: 'application/pdf'
+            contentType: 'application/pdf',
+            disposition: 'attachment'
           }
         ]
       });
@@ -178,4 +298,4 @@ async function sendPasswordResetEmail({ email, name, resetToken }) {
   }
 }
 
-module.exports = { sendBulkPayslips, sendOnboardingEmail, sendPasswordResetEmail };
+module.exports = { sendBulkPayslips, sendSinglePayslip, sendOnboardingEmail, sendPasswordResetEmail };
