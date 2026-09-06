@@ -203,7 +203,6 @@ async function requestPasswordReset(email) {
   const users = await sql`SELECT id, name, email FROM users WHERE LOWER(TRIM(email)) = ${cleanEmail}`;
 
   if (users.length === 0) {
-    // Return identical success response to prevent user enumeration
     return { success: true, message: 'If an account exists with that email, a password reset link has been sent.' };
   }
 
@@ -226,7 +225,15 @@ async function requestPasswordReset(email) {
     resetToken: rawToken
   });
 
-  return { success: true, message: 'If an account exists with that email, a password reset link has been sent.' };
+  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+  const resetLink = `${baseUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+  return { 
+    success: true, 
+    message: 'If an account exists with that email, a password reset link has been sent.',
+    resetLink,
+    token: rawToken
+  };
 }
 
 // Verify Reset Token
@@ -238,7 +245,7 @@ async function verifyResetToken(rawToken) {
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
   const users = await sql`
-    SELECT id, email, reset_token_expires_at, reset_token_used_at 
+    SELECT id, name, email, reset_token_expires_at, reset_token_used_at 
     FROM users 
     WHERE reset_token_hash = ${tokenHash}
   `;
@@ -256,7 +263,12 @@ async function verifyResetToken(rawToken) {
     return { success: false, valid: false, message: 'This password setup link has expired. Please request a new invitation.' };
   }
 
-  return { success: true, valid: true, email: user.email, user: { email: user.email } };
+  return { 
+    success: true, 
+    valid: true, 
+    email: user.email,
+    user: { id: user.id, name: user.name, email: user.email }
+  };
 }
 
 // Reset Password using Token
@@ -265,19 +277,20 @@ async function resetPassword(arg1, arg2, arg3) {
   if (typeof arg1 === 'object' && arg1 !== null) {
     token = arg1.token;
     newPassword = arg1.newPassword;
-    confirmPassword = arg1.confirmPassword || arg1.newPassword;
+    confirmPassword = arg1.confirmPassword !== undefined ? arg1.confirmPassword : arg1.newPassword;
   } else {
     token = arg1;
     newPassword = arg2;
-    confirmPassword = arg3 || arg2;
+    confirmPassword = arg3 !== undefined ? arg3 : arg2;
   }
+
   if (!token) {
     const err = new Error('This password setup link is invalid or has expired.');
     err.status = 400;
     throw err;
   }
 
-  if (newPassword !== confirmPassword) {
+  if (!newPassword || newPassword !== confirmPassword) {
     const err = new Error('Passwords do not match.');
     err.status = 400;
     throw err;

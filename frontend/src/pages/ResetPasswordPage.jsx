@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Lock, CheckCircle2, AlertTriangle, ShieldCheck, ArrowLeft, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Lock, CheckCircle2, AlertTriangle, ShieldCheck, ArrowLeft, Loader2, KeyRound, Mail } from 'lucide-react';
 import PasswordRequirements from '../components/auth/PasswordRequirements';
 import { validatePassword } from '../utils/passwordPolicy';
 import api from '../api/client';
@@ -22,10 +22,15 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     let isMounted = true;
     const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get('token');
+    let tokenParam = params.get('token');
+    if (!tokenParam && window.location.hash.includes('token=')) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      tokenParam = hashParams.get('token');
+    }
+
     if (!tokenParam) {
       setVerifying(false);
-      setVerifyError('No reset token provided in URL.');
+      setVerifyError('No password reset token was found in the URL. Please verify your invitation or reset link.');
       return;
     }
 
@@ -36,9 +41,9 @@ export default function ResetPasswordPage() {
         if (!isMounted) return;
         if (res && res.valid) {
           setTokenValid(true);
-          setUserInfo({ email: res.email || res.user?.email || '' });
+          setUserInfo(res.user || { email: res.email, name: res.name });
         } else {
-          setVerifyError(res?.message || 'This password reset link is invalid or has expired.');
+          setVerifyError(res?.message || 'This password setup link is invalid or has expired.');
         }
       })
       .catch((err) => {
@@ -87,7 +92,7 @@ export default function ResetPasswordPage() {
       if (res && res.success) {
         setSuccess(true);
       } else {
-        setSubmitError(res?.message || 'Failed to set password.');
+        setSubmitError(res?.message || 'Failed to update password.');
       }
     } catch (err) {
       setSubmitError(err.message || 'An error occurred while setting your password.');
@@ -97,157 +102,359 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0A1931] flex flex-col justify-center items-center p-4 relative overflow-hidden text-slate-100">
-      {/* Dynamic Background Accents */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-[#B3CFE5]/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-72 h-72 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+    <div
+      style={{
+        minHeight: '100vh',
+        width: '100%',
+        backgroundColor: '#0A1931',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        position: 'relative',
+        overflow: 'hidden',
+        fontFamily: "'Inter', sans-serif"
+      }}
+    >
+      {/* Background glow accents */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '25%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '384px',
+          height: '384px',
+          backgroundColor: 'rgba(179, 207, 229, 0.08)',
+          borderRadius: '50%',
+          filter: 'blur(80px)',
+          pointerEvents: 'none'
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          bottom: '40px',
+          right: '40px',
+          width: '288px',
+          height: '288px',
+          backgroundColor: 'rgba(56, 189, 248, 0.08)',
+          borderRadius: '50%',
+          filter: 'blur(80px)',
+          pointerEvents: 'none'
+        }}
+      />
 
-      <div className="max-w-md w-full z-10">
+      <div style={{ maxWidth: '440px', width: '100%', zIndex: 10 }}>
         {/* Brand Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#B3CFE5]/10 border border-[#B3CFE5]/30 mb-3">
-            <ShieldCheck className="w-8 h-8 text-[#B3CFE5]" />
+        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '56px',
+              height: '56px',
+              borderRadius: '16px',
+              backgroundColor: 'rgba(179, 207, 229, 0.1)',
+              border: '1px solid rgba(179, 207, 229, 0.3)',
+              marginBottom: '12px'
+            }}
+          >
+            <ShieldCheck style={{ width: '32px', height: '32px', color: '#B3CFE5' }} />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-100">PeoplePay360</h1>
-          <p className="text-xs text-slate-400 mt-1">HR & Payroll Operations Platform</p>
+          <h1 style={{ fontSize: '24px', fontWeight: '800', tracking: '-0.025em', color: '#F6FAFD', margin: 0 }}>
+            PeoplePay360
+          </h1>
+          <p style={{ fontSize: '13px', color: '#94A3B8', marginTop: '4px', margin: 0 }}>
+            HR & Payroll Operations Platform
+          </p>
         </div>
 
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-2xl backdrop-blur-xl">
+        <div
+          style={{
+            backgroundColor: '#102744',
+            border: '1px solid rgba(179, 207, 229, 0.2)',
+            borderRadius: '20px',
+            padding: '28px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(16px)'
+          }}
+        >
           {verifying ? (
-            <div className="py-12 text-center space-y-3">
-              <Loader2 className="w-8 h-8 text-[#B3CFE5] animate-spin mx-auto" />
-              <p className="text-sm text-slate-300">Verifying secure setup link...</p>
+            <div style={{ padding: '48px 0', textAlign: 'center' }}>
+              <Loader2
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  color: '#B3CFE5',
+                  animation: 'spin 1s linear infinite',
+                  margin: '0 auto 16px auto'
+                }}
+              />
+              <p style={{ fontSize: '14px', color: '#CBD5E1', margin: 0 }}>Verifying secure setup link...</p>
             </div>
           ) : !tokenValid ? (
-            <div className="py-6 text-center space-y-4">
-              <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
-                <AlertTriangle className="w-6 h-6" />
+            <div style={{ padding: '24px 0', textAlign: 'center' }}>
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  color: '#F87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px auto'
+                }}
+              >
+                <AlertTriangle style={{ width: '24px', height: '24px' }} />
               </div>
-              <div>
-                <h2 className="text-lg font-semibold text-rose-300">
-                  {verifyError?.toLowerCase().includes('connect') || verifyError?.toLowerCase().includes('network')
-                    ? 'Network Connection Error'
-                    : verifyError?.toLowerCase().includes('unable to reach') || verifyError?.toLowerCase().includes('unavailable')
-                    ? 'Service Unavailable'
-                    : verifyError?.toLowerCase().includes('expired')
-                    ? 'Link Expired'
-                    : verifyError?.toLowerCase().includes('used')
-                    ? 'Link Already Used'
-                    : 'Link Invalid'}
-                </h2>
-                <p className="text-xs text-slate-400 mt-1 px-4">
-                  {verifyError || 'This password setup link is invalid or has expired. Please request a new invitation from your HR Administrator.'}
-                </p>
-              </div>
+              <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#FCA5A5', margin: '0 0 8px 0' }}>
+                {verifyError?.toLowerCase().includes('connect') || verifyError?.toLowerCase().includes('network')
+                  ? 'Network Connection Error'
+                  : verifyError?.toLowerCase().includes('unable to reach') || verifyError?.toLowerCase().includes('unavailable')
+                  ? 'Service Unavailable'
+                  : verifyError?.toLowerCase().includes('expired')
+                  ? 'Link Expired'
+                  : verifyError?.toLowerCase().includes('used')
+                  ? 'Link Already Used'
+                  : 'Link Invalid'}
+              </h2>
+              <p style={{ fontSize: '13px', color: '#94A3B8', margin: '0 0 20px 0', padding: '0 16px', lineHeight: '1.5' }}>
+                {verifyError || 'This password setup link is invalid or has expired. Please request a new invitation from your HR Administrator.'}
+              </p>
               <a
                 href="/"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors mt-2"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 18px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                  color: '#E2E8F0',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  textDecoration: 'none',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
+                <ArrowLeft style={{ width: '16px', height: '16px' }} />
                 Return to Login
               </a>
             </div>
           ) : success ? (
-            <div className="py-8 text-center space-y-4">
-              <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
-              <div>
-                <h2 className="text-xl font-bold text-emerald-300">Password Set Successfully!</h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Your new password is active. You can now log into PeoplePay360.
-                </p>
-              </div>
+            <div style={{ padding: '32px 0', textAlign: 'center' }}>
+              <CheckCircle2 style={{ width: '56px', height: '56px', color: '#34D399', margin: '0 auto 16px auto' }} />
+              <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#A7F3D0', margin: '0 0 8px 0' }}>
+                Password Updated Successfully!
+              </h2>
+              <p style={{ fontSize: '13px', color: '#94A3B8', margin: '0 0 24px 0' }}>
+                Your new password is active. You can now log into PeoplePay360.
+              </p>
               <a
                 href="/"
-                className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-[#B3CFE5] text-[#0A1931] text-sm font-semibold hover:bg-sky-200 transition-colors mt-4"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  backgroundColor: '#B3CFE5',
+                  color: '#0A1931',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  textDecoration: 'none'
+                }}
               >
                 Proceed to Login
               </a>
             </div>
           ) : (
             <div>
-              <div className="mb-6">
-                <h2 className="text-lg font-semibold text-slate-100">Set Account Password</h2>
-                {userInfo && (
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Setting password for <span className="text-[#B3CFE5] font-medium">{userInfo.email}</span>
-                  </p>
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <KeyRound style={{ width: '20px', height: '20px', color: '#B3CFE5' }} />
+                  <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#F6FAFD', margin: 0 }}>
+                    Set Account Password
+                  </h2>
+                </div>
+                {userInfo && userInfo.email && (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      backgroundColor: 'rgba(179, 207, 229, 0.1)',
+                      border: '1px solid rgba(179, 207, 229, 0.2)',
+                      fontSize: '12px',
+                      color: '#B3CFE5',
+                      fontWeight: '500',
+                      marginTop: '6px'
+                    }}
+                  >
+                    <Mail style={{ width: '13px', height: '13px' }} />
+                    Resetting for {userInfo.email}
+                  </div>
                 )}
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {submitError && (
-                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-medium">
+                  <div
+                    style={{
+                      padding: '12px',
+                      borderRadius: '10px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                      color: '#FCA5A5',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}
+                  >
                     {submitError}
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#CBD5E1', marginBottom: '6px' }}>
                     New Password
                   </label>
-                  <div className="relative">
+                  <div style={{ position: 'relative' }}>
                     <input
                       type={showNew ? 'text' : 'password'}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Enter new strong password"
-                      className="w-full px-3 py-2 pr-10 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-[#B3CFE5]"
+                      style={{
+                        width: '100%',
+                        padding: '10px 40px 10px 12px',
+                        borderRadius: '10px',
+                        backgroundColor: '#0A1931',
+                        border: '1px solid rgba(179, 207, 229, 0.25)',
+                        color: '#F6FAFD',
+                        fontSize: '14px',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowNew(!showNew)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                      style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '10px',
+                        background: 'none',
+                        border: 'none',
+                        color: '#94A3B8',
+                        cursor: 'pointer',
+                        padding: 0
+                      }}
                     >
-                      {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showNew ? <EyeOff style={{ width: '16px', height: '16px' }} /> : <Eye style={{ width: '16px', height: '16px' }} />}
                     </button>
                   </div>
                   <PasswordRequirements password={newPassword} />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#CBD5E1', marginBottom: '6px' }}>
                     Confirm New Password
                   </label>
-                  <div className="relative">
+                  <div style={{ position: 'relative' }}>
                     <input
                       type={showConfirm ? 'text' : 'password'}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Re-enter new password"
-                      className={`w-full px-3 py-2 pr-10 rounded-lg bg-slate-950 border text-slate-100 placeholder-slate-500 text-sm focus:outline-none ${
-                        confirmPassword && !passwordsMatch
-                          ? 'border-rose-500'
-                          : 'border-slate-800 focus:border-[#B3CFE5]'
-                      }`}
+                      style={{
+                        width: '100%',
+                        padding: '10px 40px 10px 12px',
+                        borderRadius: '10px',
+                        backgroundColor: '#0A1931',
+                        border: confirmPassword && !passwordsMatch
+                          ? '1px solid #EF4444'
+                          : confirmPassword && passwordsMatch
+                          ? '1px solid #10B981'
+                          : '1px solid rgba(179, 207, 229, 0.25)',
+                        color: '#F6FAFD',
+                        fontSize: '14px',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirm(!showConfirm)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200"
+                      style={{
+                        position: 'absolute',
+                        right: '12px',
+                        top: '10px',
+                        background: 'none',
+                        border: 'none',
+                        color: '#94A3B8',
+                        cursor: 'pointer',
+                        padding: 0
+                      }}
                     >
-                      {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showConfirm ? <EyeOff style={{ width: '16px', height: '16px' }} /> : <Eye style={{ width: '16px', height: '16px' }} />}
                     </button>
                   </div>
-                  {confirmPassword && !passwordsMatch && (
-                    <p className="mt-1 text-[11px] text-rose-400">Passwords do not match</p>
-                  )}
+
+                  {confirmPassword ? (
+                    passwordsMatch ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#10B981', marginTop: '6px', fontWeight: '500' }}>
+                        <CheckCircle2 style={{ width: '14px', height: '14px' }} /> Passwords match
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#EF4444', marginTop: '6px', fontWeight: '500' }}>
+                        <AlertTriangle style={{ width: '14px', height: '14px' }} /> Passwords do not match
+                      </div>
+                    )
+                  ) : null}
                 </div>
 
                 <button
                   type="submit"
                   disabled={!isFormValid || submitting}
-                  className="w-full py-2.5 px-4 rounded-xl bg-[#B3CFE5] text-[#0A1931] font-semibold text-sm hover:bg-sky-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 mt-4"
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    backgroundColor: '#B3CFE5',
+                    color: '#0A1931',
+                    fontWeight: '700',
+                    fontSize: '14px',
+                    border: 'none',
+                    cursor: !isFormValid || submitting ? 'not-allowed' : 'pointer',
+                    opacity: !isFormValid || submitting ? 0.5 : 1,
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginTop: '8px'
+                  }}
                 >
                   {submitting ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
                       Saving Password...
                     </>
                   ) : (
                     <>
-                      <Lock className="w-4 h-4" />
+                      <Lock style={{ width: '16px', height: '16px' }} />
                       Set Password & Activate Account
                     </>
                   )}

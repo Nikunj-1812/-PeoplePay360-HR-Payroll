@@ -1,15 +1,14 @@
 // Centralized Password Policy Regex for Frontend
-// Minimum 12 characters, at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character (@$!%*?&)
-export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{12,}$/;
+export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?]{8,}$/;
 
 export function checkPasswordRequirements(password = '') {
   const pwd = String(password);
   return {
-    minLength: pwd.length >= 12,
+    minLength: pwd.length >= 8,
     hasUpper: /[A-Z]/.test(pwd),
     hasLower: /[a-z]/.test(pwd),
     hasNumber: /\d/.test(pwd),
-    hasSpecial: /[@$!%*?&]/.test(pwd)
+    hasSpecial: /[@$!%*?&#^()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd)
   };
 }
 

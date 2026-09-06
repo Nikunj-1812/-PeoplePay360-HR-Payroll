@@ -19,15 +19,20 @@ export default function LoginPage({ onCancel }) {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotToken, setForgotToken] = useState(null);
 
   const handleForgotSubmit = async (e) => {
     e.preventDefault();
     if (!forgotEmail) return;
     setForgotLoading(true);
     setForgotMessage('');
+    setForgotToken(null);
     try {
       const res = await api.post('/auth/forgot-password', { email: forgotEmail });
       setForgotMessage(res?.message || 'If an account exists for that email, a password reset link has been dispatched.');
+      if (res?.token) {
+        setForgotToken(res.token);
+      }
     } catch (err) {
       setForgotMessage(err.message || 'Failed to request password reset.');
     } finally {
@@ -374,7 +379,29 @@ export default function LoginPage({ onCancel }) {
                 fontSize: '12px',
                 marginBottom: '16px'
               }}>
-                {forgotMessage}
+                <div>{forgotMessage}</div>
+                {forgotToken && (
+                  <div style={{ marginTop: '8px' }}>
+                    <a
+                      href={`/reset-password?token=${encodeURIComponent(forgotToken)}`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        backgroundColor: '#B3CFE5',
+                        color: '#0A1931',
+                        fontWeight: '700',
+                        fontSize: '12px',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      Open Password Setup Page →
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 
