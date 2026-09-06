@@ -5,6 +5,21 @@
     <link rel="icon" type="image/jpeg" href="/src/assets/favicon.jpeg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PeoplePay360 — HR & Payroll Operations</title>
+    <script>
+      (function() {
+        var suppress = function(e) {
+          var msg = (e && (e.message || (e.reason && e.reason.message) || String(e.reason || e))) || '';
+          if (msg.indexOf('message channel closed') !== -1 || msg.indexOf('asynchronous response') !== -1 || msg.indexOf('listener indicated') !== -1) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            return true;
+          }
+        };
+        window.addEventListener('error', suppress, true);
+        window.addEventListener('unhandledrejection', suppress, true);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
