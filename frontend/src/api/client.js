@@ -8,11 +8,17 @@ const LOCAL_URL = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:5000/a
 const isLocalhost = typeof window !== 'undefined' && 
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-let activeBaseURL = DEPLOYED_URL || (isLocalhost ? LOCAL_URL : `${window.location.origin}/api`);
-let fallbackBaseURL = isLocalhost 
-  ? (DEPLOYED_URL || '') 
-  : LOCAL_URL;
+// let activeBaseURL = DEPLOYED_URL || (isLocalhost ? LOCAL_URL : `${window.location.origin}/api`);
+// let fallbackBaseURL = isLocalhost 
+//   ? (DEPLOYED_URL || '') 
+//   : LOCAL_URL;
+let activeBaseURL = isLocalhost
+  ? LOCAL_URL
+  : DEPLOYED_URL;
 
+let fallbackBaseURL = isLocalhost
+  ? DEPLOYED_URL
+  : '';
 const api = axios.create({
   baseURL: activeBaseURL,
   timeout: 60000,
