@@ -114,21 +114,13 @@ function sortRulesTopologically(rules) {
     const code = rule.code.toUpperCase();
     const ruleDeps = new Set();
 
-    if (rule.computation_type === 'percentage') {
-      const baseKey = (rule.percentage_based_on || 'WAGE').trim().toUpperCase();
-      if (!baseVars.has(baseKey)) {
-        if (!ruleMap.has(baseKey)) {
-          throw new Error(`Rule '${code}' depends on unknown variable/rule '${baseKey}'`);
-        }
-        ruleDeps.add(baseKey);
-      }
-    } else if (rule.computation_type === 'formula') {
-      const expr = (rule.formula_expression || rule.percentage_based_on || '').trim();
-      const tokens = expr.toUpperCase().match(/[A-Z_][A-Z0-9_]*/g) || [];
+    if (rule.computation_type !== 'fixed') {
+      const exprSource = (rule.formula_expression || rule.percentage_based_on || 'WAGE').trim();
+      const tokens = exprSource.toUpperCase().match(/[A-Z_][A-Z0-9_]*/g) || [];
       for (const tok of tokens) {
         if (!baseVars.has(tok)) {
           if (!ruleMap.has(tok)) {
-            throw new Error(`Formula rule '${code}' depends on unknown variable/rule '${tok}'`);
+            throw new Error(`Rule '${code}' depends on unknown variable/rule '${tok}'`);
           }
           ruleDeps.add(tok);
         }
@@ -357,12 +349,19 @@ async function computePayrun(payrunId) {
         if (rule.computation_type === 'fixed') {
           val = parseFloat(rule.amount) || 0;
         } else if (rule.computation_type === 'percentage') {
-          const baseKey = (rule.percentage_based_on || 'WAGE').trim().toUpperCase();
-          if (!(baseKey in ruleValues) || ruleValues[baseKey] === undefined || ruleValues[baseKey] === null) {
-            throw new Error(`Cannot calculate ${rule.name} (${rule.code}): required base variable '${baseKey}' is unavailable or missing.`);
+          const expr = (rule.formula_expression || '').trim();
+          if (expr) {
+            val = evaluateRuleExpression(expr, ruleValues);
+          } else {
+            const baseKey = (rule.percentage_based_on || 'WAGE').trim().toUpperCase();
+            if (baseKey in ruleValues && !/[+\-*/()]/.test(baseKey)) {
+              val = ruleValues[baseKey] * (parseFloat(rule.percentage) / 100);
+            } else {
+              const baseVal = evaluateRuleExpression(baseKey, ruleValues);
+              const pct = parseFloat(rule.percentage) || 0;
+              val = pct > 0 ? baseVal * (pct / 100) : baseVal;
+            }
           }
-          const baseVal = ruleValues[baseKey];
-          val = baseVal * (parseFloat(rule.percentage) / 100);
         } else if (rule.computation_type === 'formula') {
           const expr = (rule.formula_expression || rule.percentage_based_on || '').trim();
           val = evaluateRuleExpression(expr, ruleValues);

@@ -264,7 +264,7 @@ export default function SalaryStructuresPage() {
                       <th>Rule Code</th>
                       <th>Rule Name</th>
                       <th>Category</th>
-                      <th>Computation Type</th>
+                      <th>Calculation Logic</th>
                       <th>Status</th>
                       {canManage && <th>Actions</th>}
                     </tr>
@@ -280,7 +280,13 @@ export default function SalaryStructuresPage() {
                             {r.category ? String(r.category).toUpperCase() : 'GENERAL'}
                           </span>
                         </td>
-                        <td style={{ textTransform: 'capitalize' }}>{r.computation_type}</td>
+                        <td>
+                          {r.computation_type === 'fixed'
+                            ? `Fixed: ${r.amount || 0}`
+                            : r.computation_type === 'percentage'
+                              ? `${r.percentage || 0}% of ${r.percentage_based_on || 'WAGE'}`
+                              : r.formula_expression || r.percentage_based_on || 'Formula not configured'}
+                        </td>
                         <td><span className="badge badge-active">Active</span></td>
                         {canManage && (
                           <td onClick={(e) => e.stopPropagation()}>
@@ -367,6 +373,14 @@ export default function SalaryStructuresPage() {
                 <div style={{ gridColumn: 'span 2' }}><strong>Rule Name:</strong> {selectedRuleDetail.name}</div>
                 <div><strong>Category:</strong> {selectedRuleDetail.category}</div>
                 <div><strong>Computation Type:</strong> {selectedRuleDetail.computation_type}</div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <strong>Calculation Logic:</strong>{' '}
+                  {selectedRuleDetail.computation_type === 'fixed'
+                    ? `FIXED (${selectedRuleDetail.amount || 0})`
+                    : selectedRuleDetail.computation_type === 'percentage'
+                      ? `${selectedRuleDetail.percentage || 0}% of ${selectedRuleDetail.percentage_based_on || 'WAGE'}`
+                      : selectedRuleDetail.formula_expression || selectedRuleDetail.percentage_based_on || 'Not configured'}
+                </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button onClick={() => setSelectedRuleDetail(null)} className="btn btn-secondary">Close</button>
@@ -429,6 +443,19 @@ export default function SalaryStructuresPage() {
                         <option value="BASIC">Basic Salary</option>
                         <option value="GROSS">Gross Salary</option>
                       </select>
+                    </div>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label className="form-label">Calculation Logic (optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. BASIC + HRA"
+                        className="form-input"
+                        value={ruleForm.formula_expression}
+                        onChange={(e) => setRuleForm({ ...ruleForm, formula_expression: e.target.value })}
+                      />
+                      <small style={{ color: 'var(--text-muted)' }}>
+                        Leave empty to calculate the percentage from the selected base. Enter a formula to calculate the rule from earlier rule codes.
+                      </small>
                     </div>
                   </>
                 )}
