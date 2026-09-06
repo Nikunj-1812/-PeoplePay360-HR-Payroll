@@ -12,22 +12,26 @@ export function getSocket(token) {
   }
 
   if (!socket) {
-    const rawApiUrl = import.meta.env.VITE_API_URL || '';
-    const socketUrl = rawApiUrl 
-      ? rawApiUrl.replace(/\/api\/?$/, '') 
-      : (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1'))
-        ? 'http://localhost:5000' 
-        : window.location.origin;
+    const rawApiUrl = import.meta.env.VITE_DEPLOYED_API_URL || import.meta.env.VITE_API_URL || '';
+    const isLocalhost = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    let socketUrl = 'https://peoplepay-360.onrender.com';
+    if (isLocalhost) {
+      socketUrl = 'http://localhost:5000';
+    } else if (rawApiUrl) {
+      socketUrl = rawApiUrl.replace(/\/api\/?$/, '');
+    }
 
     socket = io(socketUrl, {
       auth: { token },
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      timeout: 20000,
-      transports: ['websocket', 'polling']
+      reconnectionAttempts: 3,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
+      timeout: 10000,
+      transports: ['polling', 'websocket']
     });
 
     socket.on('connect', () => {
@@ -35,7 +39,7 @@ export function getSocket(token) {
     });
 
     socket.on('connect_error', (err) => {
-      console.warn('[Socket.IO] Connection error (falling back seamlessly to HTTP API):', err.message);
+      console.warn('[Socket.IO] Connection notice (falling back seamlessly to HTTP API):', err.message);
     });
 
     socket.on('disconnect', (reason) => {
