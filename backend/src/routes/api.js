@@ -64,7 +64,7 @@ router.post('/auth/reset-password', asyncHandler(async (req, res) => {
   if (confirmPassword && newPassword !== confirmPassword) {
     return res.status(400).json({ success: false, message: 'Passwords do not match' });
   }
-  const result = await authService.resetPassword(token, newPassword);
+  const result = await authService.resetPassword({ token, newPassword, confirmPassword });
   res.json(result);
 }));
 

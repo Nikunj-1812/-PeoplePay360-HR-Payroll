@@ -1,14 +1,17 @@
 import axios from 'axios';
 import { getCacheKey, getCached, setCached, invalidateCache, clearAllCache } from './cache';
 
-// Dual backend configuration
+// Dual backend configuration with smart environment resolution
 const DEPLOYED_URL = import.meta.env.VITE_DEPLOYED_API_URL || import.meta.env.VITE_API_URL || '';
 const LOCAL_URL = import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:5000/api';
 
-let activeBaseURL = DEPLOYED_URL || LOCAL_URL;
-let fallbackBaseURL = DEPLOYED_URL && LOCAL_URL && DEPLOYED_URL !== LOCAL_URL 
-  ? (activeBaseURL === DEPLOYED_URL ? LOCAL_URL : DEPLOYED_URL)
-  : (activeBaseURL !== LOCAL_URL ? LOCAL_URL : '');
+const isLocalhost = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+let activeBaseURL = DEPLOYED_URL || (isLocalhost ? LOCAL_URL : `${window.location.origin}/api`);
+let fallbackBaseURL = isLocalhost 
+  ? (DEPLOYED_URL || '') 
+  : LOCAL_URL;
 
 const api = axios.create({
   baseURL: activeBaseURL,

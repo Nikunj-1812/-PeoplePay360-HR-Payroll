@@ -34,13 +34,18 @@ export default function ResetPasswordPage() {
       .then((res) => {
         if (res && res.valid) {
           setTokenValid(true);
-          setUserInfo(res.user);
+          setUserInfo({ email: res.email || res.user?.email || '' });
         } else {
           setVerifyError(res?.message || 'This password reset link is invalid or has expired.');
         }
       })
       .catch((err) => {
-        setVerifyError(err.message || 'Invalid or expired setup token.');
+        const errMsg = err.message || '';
+        if (errMsg.toLowerCase().includes('network') || err.code === 'ERR_NETWORK') {
+          setVerifyError('Unable to connect to PeoplePay360 backend service. Please check backend server deployment status.');
+        } else {
+          setVerifyError(errMsg || 'Invalid or expired setup token.');
+        }
       })
       .finally(() => {
         setVerifying(false);
@@ -105,7 +110,11 @@ export default function ResetPasswordPage() {
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-rose-300">Link Invalid or Expired</h2>
+                <h2 className="text-lg font-semibold text-rose-300">
+                  {verifyError?.toLowerCase().includes('connect') || verifyError?.toLowerCase().includes('network')
+                    ? 'Network Connection Error'
+                    : 'Link Invalid or Expired'}
+                </h2>
                 <p className="text-xs text-slate-400 mt-1 px-4">
                   {verifyError || 'This password setup link is invalid or has expired. Please request a new invitation from your HR Administrator.'}
                 </p>

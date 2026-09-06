@@ -256,11 +256,21 @@ async function verifyResetToken(rawToken) {
     return { success: false, valid: false, message: 'This password setup link has expired. Please request a new invitation.' };
   }
 
-  return { success: true, valid: true, email: user.email };
+  return { success: true, valid: true, email: user.email, user: { email: user.email } };
 }
 
 // Reset Password using Token
-async function resetPassword({ token, newPassword, confirmPassword }) {
+async function resetPassword(arg1, arg2, arg3) {
+  let token, newPassword, confirmPassword;
+  if (typeof arg1 === 'object' && arg1 !== null) {
+    token = arg1.token;
+    newPassword = arg1.newPassword;
+    confirmPassword = arg1.confirmPassword || arg1.newPassword;
+  } else {
+    token = arg1;
+    newPassword = arg2;
+    confirmPassword = arg3 || arg2;
+  }
   if (!token) {
     const err = new Error('This password setup link is invalid or has expired.');
     err.status = 400;
