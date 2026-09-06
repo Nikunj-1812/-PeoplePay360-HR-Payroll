@@ -20,6 +20,7 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
     const params = new URLSearchParams(window.location.search);
     const tokenParam = params.get('token');
     if (!tokenParam) {
@@ -32,6 +33,7 @@ export default function ResetPasswordPage() {
     api
       .post('/auth/verify-reset-token', { token: tokenParam })
       .then((res) => {
+        if (!isMounted) return;
         if (res && res.valid) {
           setTokenValid(true);
           setUserInfo({ email: res.email || res.user?.email || '' });
@@ -40,6 +42,7 @@ export default function ResetPasswordPage() {
         }
       })
       .catch((err) => {
+        if (!isMounted) return;
         const errMsg = err.message || '';
         const status = err.status || err.response?.status;
         if (errMsg.toLowerCase().includes('network') || err.code === 'ERR_NETWORK') {
@@ -53,8 +56,14 @@ export default function ResetPasswordPage() {
         }
       })
       .finally(() => {
-        setVerifying(false);
+        if (isMounted) {
+          setVerifying(false);
+        }
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const passwordVal = validatePassword(newPassword);
