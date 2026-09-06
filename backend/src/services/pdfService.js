@@ -54,7 +54,6 @@ async function generatePayslipPDF(payslipId) {
         const pdfData = Buffer.concat(buffers);
         resolve(pdfData);
       });
-      doc.on('error', (err) => reject(err));
 
       const PAGE_WIDTH = 595.28;
       const PAGE_HEIGHT = 841.89;
@@ -78,13 +77,13 @@ async function generatePayslipPDF(payslipId) {
       // Employee Information 2-Column Grid
       const COL1_LABEL_X = MARGIN;         // 40
       const COL1_LABEL_W = 80;
-      const COL1_VAL_X   = MARGIN + 85;    // 125
-      const COL1_VAL_W   = 165;
+      const COL1_VAL_X = MARGIN + 85;    // 125
+      const COL1_VAL_W = 165;
 
       const COL2_LABEL_X = MARGIN + 265;   // 305
       const COL2_LABEL_W = 75;
-      const COL2_VAL_X   = MARGIN + 345;   // 385
-      const COL2_VAL_W   = 170;
+      const COL2_VAL_X = MARGIN + 345;   // 385
+      const COL2_VAL_W = 170;
 
       let infoY = 125;
       const rowGap = 18;
@@ -120,10 +119,10 @@ async function generatePayslipPDF(payslipId) {
       const TBL_CODE_W = 65;
       const TBL_NAME_X = MARGIN + 80;     // 120
       const TBL_NAME_W = 200;
-      const TBL_CAT_X  = MARGIN + 285;    // 325
-      const TBL_CAT_W  = 90;
-      const TBL_AMT_X  = MARGIN + 380;    // 420
-      const TBL_AMT_W  = 125;
+      const TBL_CAT_X = MARGIN + 285;    // 325
+      const TBL_CAT_W = 90;
+      const TBL_AMT_X = MARGIN + 380;    // 420
+      const TBL_AMT_W = 125;
 
       const renderTableHeader = (yPos) => {
         doc.fillColor('#F6FAFD').rect(MARGIN, yPos, CONTENT_WIDTH, 24).fill('#F6FAFD');
@@ -154,7 +153,7 @@ async function generatePayslipPDF(payslipId) {
         doc.text(line.rule_name || '', TBL_NAME_X, tableY, { width: TBL_NAME_W });
         doc.text(String(line.category || 'GENERAL').toUpperCase(), TBL_CAT_X, tableY, { width: TBL_CAT_W, lineBreak: false, ellipsis: true });
         doc.text(formatCurrencyINR(line.amount), TBL_AMT_X, tableY, { width: TBL_AMT_W, align: 'right' });
-        
+
         tableY += rowHeight;
       }
 

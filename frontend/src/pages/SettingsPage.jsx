@@ -59,7 +59,7 @@ export default function SettingsPage() {
       const res = await api.post('/auth/users', createForm);
       api.invalidate(['users', 'dashboard']);
       if (res && res.data?.emailSent) {
-        toast.success(`User "${createForm.name}" created and onboarding email sent to ${createForm.email}!`);
+        toast.success(`User "${createForm.name}" created & onboarding email sent to ${createForm.email}!`);
       } else {
         toast.success(`User "${createForm.name}" created successfully.`);
         if (res?.data?.emailError) {
@@ -144,7 +144,7 @@ export default function SettingsPage() {
 
   const filteredUsers = users.filter(u => {
     const q = search.toLowerCase();
-    return !search || 
+    return !search ||
       (u.name && u.name.toLowerCase().includes(q)) ||
       (u.email && u.email.toLowerCase().includes(q)) ||
       (u.role && u.role.toLowerCase().includes(q)) ||

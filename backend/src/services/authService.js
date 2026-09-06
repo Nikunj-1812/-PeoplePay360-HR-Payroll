@@ -308,8 +308,8 @@ async function requestPasswordReset(email) {
   const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
   const resetLink = `${baseUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
-  return { 
-    success: true, 
+  return {
+    success: true,
     message: 'If an account exists with that email, a password reset link has been sent.',
     resetLink,
     token: rawToken
@@ -343,9 +343,9 @@ async function verifyResetToken(rawToken) {
     return { success: false, valid: false, message: 'This password setup link has expired. Please request a new invitation.' };
   }
 
-  return { 
-    success: true, 
-    valid: true, 
+  return {
+    success: true,
+    valid: true,
     email: user.email,
     user: { id: user.id, name: user.name, email: user.email }
   };

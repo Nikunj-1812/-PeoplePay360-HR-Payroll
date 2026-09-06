@@ -924,13 +924,6 @@ router.get('/payslips/:id/pdf', authenticateToken, asyncHandler(async (req, res)
   res.send(pdfBuffer);
 }));
 
-// POST /api/payslips/:id/send-email
-router.post('/payslips/:id/send-email', authenticateToken, requireRole(['hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
-  const result = await emailService.sendSinglePayslip(req.params.id);
-  await redisService.invalidatePayruns();
-  res.json({ success: true, data: result });
-}));
-
 // ==========================================
 // 10. REPORTS MODULE ROUTES
 // ==========================================
@@ -1059,6 +1052,12 @@ router.get('/reports/:type/csv', authenticateToken, requireRole(['hr_manager', '
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="PeoplePay360_${type}_report_${new Date().toISOString().split('T')[0]}.csv"`);
   res.status(200).send(csvContent);
+}));
+
+module.exports = router;
+res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+res.setHeader('Content-Disposition', `attachment; filename="PeoplePay360_${type}_report_${new Date().toISOString().split('T')[0]}.csv"`);
+res.status(200).send(csvContent);
 }));
 
 module.exports = router;
