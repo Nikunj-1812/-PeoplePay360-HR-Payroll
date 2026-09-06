@@ -41,10 +41,13 @@ export default function ResetPasswordPage() {
       })
       .catch((err) => {
         const errMsg = err.message || '';
-        if (errMsg.toLowerCase().includes('network') || err.code === 'ERR_NETWORK') {
+        const status = err.status || err.response?.status;
+        if (status === 405 || errMsg.includes('405')) {
+          setVerifyError("We couldn't process the password reset request. Please try again or request a new reset link.");
+        } else if (errMsg.toLowerCase().includes('network') || err.code === 'ERR_NETWORK') {
           setVerifyError('Unable to connect to PeoplePay360 backend service. Please check backend server deployment status.');
         } else {
-          setVerifyError(errMsg || 'Invalid or expired setup token.');
+          setVerifyError(errMsg || 'This password setup link is invalid or has expired.');
         }
       })
       .finally(() => {
@@ -113,7 +116,13 @@ export default function ResetPasswordPage() {
                 <h2 className="text-lg font-semibold text-rose-300">
                   {verifyError?.toLowerCase().includes('connect') || verifyError?.toLowerCase().includes('network')
                     ? 'Network Connection Error'
-                    : 'Link Invalid or Expired'}
+                    : verifyError?.toLowerCase().includes('couldn\'t process')
+                    ? 'Request Unable to Process'
+                    : verifyError?.toLowerCase().includes('expired')
+                    ? 'Link Expired'
+                    : verifyError?.toLowerCase().includes('used')
+                    ? 'Link Already Used'
+                    : 'Link Invalid'}
                 </h2>
                 <p className="text-xs text-slate-400 mt-1 px-4">
                   {verifyError || 'This password setup link is invalid or has expired. Please request a new invitation from your HR Administrator.'}

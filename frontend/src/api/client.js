@@ -86,7 +86,10 @@ api.interceptors.response.use(
     }
 
     const msg = error.response?.data?.message || error.message || 'An unexpected API error occurred.';
-    return Promise.reject(new Error(msg));
+    const apiErr = new Error(msg);
+    apiErr.status = error.response?.status;
+    apiErr.response = error.response;
+    return Promise.reject(apiErr);
   }
 );
 

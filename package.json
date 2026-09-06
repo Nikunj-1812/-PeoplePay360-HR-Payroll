@@ -1,0 +1,26 @@
+{
+  "name": "peoplepay360",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PeoplePay360 - Integrated HR & Payroll Operations Platform",
+  "main": "api/index.js",
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "start": "node backend/src/server.js",
+    "dev": "nodemon backend/src/server.js"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.3.0",
+    "nodemailer": "^10.0.0",
+    "pdfkit": "^0.20.2",
+    "socket.io": "^4.8.3"
+  }
+}
