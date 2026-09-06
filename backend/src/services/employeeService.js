@@ -65,11 +65,19 @@ async function getEmployeeById(id) {
   if (emps.length === 0) throw new Error('Employee not found');
   const employee = emps[0];
 
-  const [contracts] = await sql`SELECT count(*)::int as count FROM contracts WHERE employee_id = ${id}`;
-  const [attendance] = await sql`SELECT count(*)::int as count FROM attendance WHERE employee_id = ${id}`;
-  const [timeOff] = await sql`SELECT count(*)::int as count FROM time_off_requests WHERE employee_id = ${id}`;
-  const [payslips] = await sql`SELECT count(*)::int as count FROM payslips WHERE employee_id = ${id}`;
-  const [allocations] = await sql`SELECT count(*)::int as count FROM time_off_allocations WHERE employee_id = ${id}`;
+  const [
+    [contracts],
+    [attendance],
+    [timeOff],
+    [payslips],
+    [allocations]
+  ] = await Promise.all([
+    sql`SELECT count(*)::int as count FROM contracts WHERE employee_id = ${id}`,
+    sql`SELECT count(*)::int as count FROM attendance WHERE employee_id = ${id}`,
+    sql`SELECT count(*)::int as count FROM time_off_requests WHERE employee_id = ${id}`,
+    sql`SELECT count(*)::int as count FROM payslips WHERE employee_id = ${id}`,
+    sql`SELECT count(*)::int as count FROM time_off_allocations WHERE employee_id = ${id}`
+  ]);
 
   return {
     ...employee,
@@ -131,11 +139,23 @@ async function getEmployeeHistory(id) {
   };
 }
 
-// Create new employee and auto-sync user account
+const crypto = require('crypto');
+const { generateSecureTemporaryPassword } = require('../utils/passwordPolicy');
+const emailService = require('./emailService');
+
+// Create new employee and auto-sync user account with secure onboarding credentials
 async function createEmployee(data) {
   const { emp_id, first_name, last_name, email, phone, department_id, manager_id, schedule_id, job_position, role, bank_name, account_number, ifsc_code } = data;
   const cleanEmail = String(email).trim().toLowerCase();
   const targetRole = resolveRole(role, job_position);
+
+  // Check email uniqueness across employees
+  const existingEmail = await sql`SELECT id FROM employees WHERE LOWER(TRIM(email)) = ${cleanEmail}`;
+  if (existingEmail.length > 0) {
+    const err = new Error(`An account already exists for email "${cleanEmail}".`);
+    err.status = 400;
+    throw err;
+  }
 
   const [newEmp] = await sql`
     INSERT INTO employees 
@@ -145,26 +165,53 @@ async function createEmployee(data) {
     RETURNING *
   `;
 
+  // Generate secure temporary credential & 24h reset token
+  const tempPassword = generateSecureTemporaryPassword();
+  const tempPasswordHash = await bcrypt.hash(tempPassword, 10);
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
   // Sync to Users table (Settings & Users)
-  const existingUsers = await sql`SELECT id FROM users WHERE LOWER(email) = ${cleanEmail} OR employee_id = ${newEmp.id}`;
+  const existingUsers = await sql`SELECT id FROM users WHERE LOWER(TRIM(email)) = ${cleanEmail} OR employee_id = ${newEmp.id}`;
   if (existingUsers.length > 0) {
     await sql`
       UPDATE users SET
         name = ${`${first_name} ${last_name}`.trim()},
         email = ${cleanEmail},
+        password_hash = ${tempPasswordHash},
         role = ${targetRole},
-        employee_id = ${newEmp.id}
+        employee_id = ${newEmp.id},
+        must_change_password = FALSE,
+        reset_token_hash = ${tokenHash},
+        reset_token_expires_at = ${expiresAt},
+        reset_token_used_at = NULL
       WHERE id = ${existingUsers[0].id}
     `;
   } else {
-    const passwordHash = await bcrypt.hash('PeoplePay@123', 10);
     await sql`
-      INSERT INTO users (name, email, password_hash, role, employee_id)
-      VALUES (${`${first_name} ${last_name}`.trim()}, ${cleanEmail}, ${passwordHash}, ${targetRole}, ${newEmp.id})
+      INSERT INTO users (name, email, password_hash, role, employee_id, must_change_password, reset_token_hash, reset_token_expires_at)
+      VALUES (${`${first_name} ${last_name}`.trim()}, ${cleanEmail}, ${tempPasswordHash}, ${targetRole}, ${newEmp.id}, FALSE, ${tokenHash}, ${expiresAt})
     `;
   }
 
-  return { ...newEmp, role: targetRole };
+  // Dispatch onboarding invitation email
+  const emailRes = await emailService.sendOnboardingEmail({
+    employeeName: `${first_name} ${last_name}`.trim(),
+    employeeEmail: cleanEmail,
+    temporaryPassword: tempPassword,
+    resetToken: rawToken
+  });
+
+  return {
+    ...newEmp,
+    role: targetRole,
+    accountCreated: true,
+    emailSent: !!emailRes.emailSent,
+    message: emailRes.emailSent 
+      ? 'Employee created and onboarding credentials emailed successfully.' 
+      : 'Employee created, but onboarding email could not be delivered.'
+  };
 }
 
 // Update existing employee and sync user account & role
@@ -243,11 +290,67 @@ async function deleteEmployee(id) {
   return deleted;
 }
 
+async function resendInvitation(id) {
+  const cleanId = parseInt(id, 10);
+  const employee = await getEmployeeById(cleanId);
+  if (!employee) {
+    throw new Error('Employee not found');
+  }
+
+  const cleanEmail = String(employee.email).trim().toLowerCase();
+  const tempPassword = generateSecureTemporaryPassword();
+  const tempPasswordHash = await bcrypt.hash(tempPassword, 10);
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  const users = await sql`SELECT id FROM users WHERE employee_id = ${cleanId} OR LOWER(email) = ${cleanEmail}`;
+  let userId;
+  if (users.length > 0) {
+    userId = users[0].id;
+    await sql`
+      UPDATE users SET
+        email = ${cleanEmail},
+        password_hash = ${tempPasswordHash},
+        must_change_password = FALSE,
+        reset_token_hash = ${tokenHash},
+        reset_token_expires_at = ${expiresAt},
+        reset_token_used_at = NULL
+      WHERE id = ${userId}
+    `;
+  } else {
+    const targetRole = resolveRole(employee.role, employee.job_position);
+    const [newUser] = await sql`
+      INSERT INTO users (name, email, password_hash, role, employee_id, must_change_password, reset_token_hash, reset_token_expires_at)
+      VALUES (${`${employee.first_name} ${employee.last_name}`.trim()}, ${cleanEmail}, ${tempPasswordHash}, ${targetRole}, ${cleanId}, FALSE, ${tokenHash}, ${expiresAt})
+      RETURNING id
+    `;
+    userId = newUser.id;
+  }
+
+  const emailRes = await emailService.sendOnboardingEmail({
+    employeeName: `${employee.first_name} ${employee.last_name}`.trim(),
+    employeeEmail: cleanEmail,
+    temporaryPassword: tempPassword,
+    resetToken: rawToken
+  });
+
+  return {
+    success: true,
+    emailSent: !!emailRes.emailSent,
+    message: emailRes.emailSent 
+      ? `Onboarding invitation sent to ${cleanEmail}.` 
+      : `Failed to send onboarding email to ${cleanEmail}. Please check SMTP configuration.`
+  };
+}
+
 module.exports = {
   getEmployees,
   getEmployeeById,
   getEmployeeHistory,
   createEmployee,
   updateEmployee,
-  deleteEmployee
+  deleteEmployee,
+  resendInvitation
 };
+

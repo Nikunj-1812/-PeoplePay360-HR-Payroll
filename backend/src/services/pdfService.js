@@ -1,6 +1,26 @@
 const PDFDocument = require('pdfkit');
 const { sql } = require('../db');
 
+function formatPayslipDate(d) {
+  if (!d) return 'N/A';
+  const dateObj = new Date(d);
+  if (isNaN(dateObj.getTime())) return String(d);
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[dateObj.getMonth()];
+  const year = dateObj.getFullYear();
+  return `${day} ${month} ${year}`;
+}
+
+function formatCurrencyINR(amount) {
+  const n = parseFloat(amount) || 0;
+  const absFormatted = Math.abs(n).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  return n < 0 ? `- INR ${absFormatted}` : `INR ${absFormatted}`;
+}
+
 async function generatePayslipPDF(payslipId) {
   const payslips = await sql`
     SELECT 
@@ -35,79 +55,148 @@ async function generatePayslipPDF(payslipId) {
         resolve(pdfData);
       });
 
+      const PAGE_WIDTH = 595.28;
+      const PAGE_HEIGHT = 841.89;
+      const MARGIN = 40;
+      const CONTENT_WIDTH = PAGE_WIDTH - 2 * MARGIN; // 515.28
+
+      const renderHeader = () => {
+        doc.fillColor('#0A1931').rect(0, 0, PAGE_WIDTH, 80).fill('#0A1931');
+        doc.fillColor('#B3CFE5').fontSize(22).font('Helvetica-Bold').text('PeoplePay360', MARGIN, 22);
+        doc.fillColor('#FFFFFF').fontSize(9).font('Helvetica').text('HR & PAYROLL OPERATIONS PLATFORM', MARGIN, 48);
+        doc.fillColor('#B3CFE5').fontSize(14).font('Helvetica-Bold').text('PAYSLIP STATEMENT', MARGIN, 32, { width: CONTENT_WIDTH, align: 'right' });
+      };
+
       // Branding Header
-      doc.fillColor('#0A1931').rect(0, 0, 595.28, 80).fill('#0A1931');
-      doc.fillColor('#B3CFE5').fontSize(22).font('Helvetica-Bold').text('PeoplePay360', 40, 25);
-      doc.fillColor('#FFFFFF').fontSize(10).font('Helvetica').text('HR & PAYROLL OPERATIONS PLATFORM', 40, 50);
-      doc.fillColor('#B3CFE5').fontSize(14).font('Helvetica-Bold').text('PAYSLIP STATEMENT', 400, 32, { align: 'right' });
+      renderHeader();
 
-      doc.moveDown(3);
+      // Title Section
+      doc.fillColor('#1A3D63').fontSize(13).font('Helvetica-Bold').text(`Employee Payslip: ${slip.first_name} ${slip.last_name}`, MARGIN, 95, { width: CONTENT_WIDTH, lineBreak: false, ellipsis: true });
+      doc.strokeColor('#B3CFE5').lineWidth(1).moveTo(MARGIN, 115).lineTo(PAGE_WIDTH - MARGIN, 115).stroke();
 
-      // Metadata Card
-      doc.fillColor('#1A3D63').fontSize(14).font('Helvetica-Bold').text(`Employee Payslip: ${slip.first_name} ${slip.last_name}`, 40, 100);
-      doc.strokeColor('#B3CFE5').lineWidth(1).moveTo(40, 120).lineTo(555, 120).stroke();
+      // Employee Information 2-Column Grid
+      const COL1_LABEL_X = MARGIN;         // 40
+      const COL1_LABEL_W = 80;
+      const COL1_VAL_X   = MARGIN + 85;    // 125
+      const COL1_VAL_W   = 165;
 
-      doc.fontSize(10).fillColor('#0A1931').font('Helvetica-Bold');
-      doc.text('Employee ID:', 40, 130);
-      doc.font('Helvetica').text(slip.emp_id, 130, 130);
-      doc.font('Helvetica-Bold').text('Department:', 300, 130);
-      doc.font('Helvetica').text(slip.department_name || 'N/A', 400, 130);
+      const COL2_LABEL_X = MARGIN + 265;   // 305
+      const COL2_LABEL_W = 75;
+      const COL2_VAL_X   = MARGIN + 345;   // 385
+      const COL2_VAL_W   = 170;
 
-      doc.font('Helvetica-Bold').text('Designation:', 40, 150);
-      doc.font('Helvetica').text(slip.job_position || 'N/A', 130, 150);
-      doc.font('Helvetica-Bold').text('Pay Period:', 300, 150);
-      doc.font('Helvetica').text(`${slip.period_start} to ${slip.period_end}`, 400, 150);
+      let infoY = 125;
+      const rowGap = 18;
 
-      doc.font('Helvetica-Bold').text('Bank Name:', 40, 170);
-      doc.font('Helvetica').text(slip.bank_name || 'N/A', 130, 170);
-      doc.font('Helvetica-Bold').text('Account No:', 300, 170);
-      doc.font('Helvetica').text(slip.account_number || 'N/A', 400, 170);
+      // Row 1: Emp ID & Department
+      doc.fontSize(9).fillColor('#0A1931');
+      doc.font('Helvetica-Bold').text('Employee ID:', COL1_LABEL_X, infoY, { width: COL1_LABEL_W });
+      doc.font('Helvetica').text(slip.emp_id || 'N/A', COL1_VAL_X, infoY, { width: COL1_VAL_W, height: 12, lineBreak: false, ellipsis: true });
+      doc.font('Helvetica-Bold').text('Department:', COL2_LABEL_X, infoY, { width: COL2_LABEL_W });
+      doc.font('Helvetica').text(slip.department_name || 'N/A', COL2_VAL_X, infoY, { width: COL2_VAL_W, height: 12, lineBreak: false, ellipsis: true });
 
-      doc.strokeColor('#E5E4E7').lineWidth(1).moveTo(40, 195).lineTo(555, 195).stroke();
+      // Row 2: Designation & Pay Period
+      infoY += rowGap;
+      const periodStr = `${formatPayslipDate(slip.period_start)} - ${formatPayslipDate(slip.period_end)}`;
+      doc.font('Helvetica-Bold').text('Designation:', COL1_LABEL_X, infoY, { width: COL1_LABEL_W });
+      doc.font('Helvetica').text(slip.job_position || 'N/A', COL1_VAL_X, infoY, { width: COL1_VAL_W, height: 12, lineBreak: false, ellipsis: true });
+      doc.font('Helvetica-Bold').text('Pay Period:', COL2_LABEL_X, infoY, { width: COL2_LABEL_W });
+      doc.font('Helvetica').text(periodStr, COL2_VAL_X, infoY, { width: COL2_VAL_W, height: 12, lineBreak: false, ellipsis: true });
+
+      // Row 3: Bank Name & Account No
+      infoY += rowGap;
+      doc.font('Helvetica-Bold').text('Bank Name:', COL1_LABEL_X, infoY, { width: COL1_LABEL_W });
+      doc.font('Helvetica').text(slip.bank_name || 'N/A', COL1_VAL_X, infoY, { width: COL1_VAL_W, height: 12, lineBreak: false, ellipsis: true });
+      doc.font('Helvetica-Bold').text('Account No:', COL2_LABEL_X, infoY, { width: COL2_LABEL_W });
+      doc.font('Helvetica').text(slip.account_number || 'N/A', COL2_VAL_X, infoY, { width: COL2_VAL_W, height: 12, lineBreak: false, ellipsis: true });
+
+      infoY += 24;
+      doc.strokeColor('#E5E4E7').lineWidth(1).moveTo(MARGIN, infoY).lineTo(PAGE_WIDTH - MARGIN, infoY).stroke();
 
       // Salary Breakdown Table Header
-      let y = 210;
-      doc.fillColor('#F6FAFD').rect(40, y, 515, 25).fill('#F6FAFD');
-      doc.fillColor('#0A1931').fontSize(10).font('Helvetica-Bold');
-      doc.text('Code', 50, y + 7);
-      doc.text('Salary Component', 130, y + 7);
-      doc.text('Category', 330, y + 7);
-      doc.text('Amount (INR)', 450, y + 7, { align: 'right' });
+      let tableY = infoY + 12;
+      const TBL_CODE_X = MARGIN + 10;     // 50
+      const TBL_CODE_W = 65;
+      const TBL_NAME_X = MARGIN + 80;     // 120
+      const TBL_NAME_W = 200;
+      const TBL_CAT_X  = MARGIN + 285;    // 325
+      const TBL_CAT_W  = 90;
+      const TBL_AMT_X  = MARGIN + 380;    // 420
+      const TBL_AMT_W  = 125;
 
-      y += 30;
+      const renderTableHeader = (yPos) => {
+        doc.fillColor('#F6FAFD').rect(MARGIN, yPos, CONTENT_WIDTH, 24).fill('#F6FAFD');
+        doc.fillColor('#0A1931').fontSize(9).font('Helvetica-Bold');
+        doc.text('Code', TBL_CODE_X, yPos + 7, { width: TBL_CODE_W });
+        doc.text('Salary Component', TBL_NAME_X, yPos + 7, { width: TBL_NAME_W });
+        doc.text('Category', TBL_CAT_X, yPos + 7, { width: TBL_CAT_W });
+        doc.text('Amount (INR)', TBL_AMT_X, yPos + 7, { width: TBL_AMT_W, align: 'right' });
+      };
+
+      renderTableHeader(tableY);
+      tableY += 28;
 
       // Table Rows
       for (const line of lines) {
         doc.font('Helvetica').fontSize(9).fillColor('#0A1931');
-        doc.text((line.rule_code || ''), 50, y);
-        doc.text((line.rule_name || ''), 130, y);
-        doc.text(String(line.category || 'GENERAL').toUpperCase(), 330, y);
-        doc.text(`₹ ${parseFloat(line.amount).toLocaleString('en-IN')}`, 450, y, { align: 'right' });
-        y += 20;
+        const nameHeight = doc.heightOfString(line.rule_name || '', { width: TBL_NAME_W });
+        const rowHeight = Math.max(18, nameHeight + 4);
+
+        if (tableY + rowHeight > 730) {
+          doc.addPage();
+          tableY = 40;
+          renderTableHeader(tableY);
+          tableY += 28;
+        }
+
+        doc.text(line.rule_code || '', TBL_CODE_X, tableY, { width: TBL_CODE_W, lineBreak: false, ellipsis: true });
+        doc.text(line.rule_name || '', TBL_NAME_X, tableY, { width: TBL_NAME_W });
+        doc.text(String(line.category || 'GENERAL').toUpperCase(), TBL_CAT_X, tableY, { width: TBL_CAT_W, lineBreak: false, ellipsis: true });
+        doc.text(formatCurrencyINR(line.amount), TBL_AMT_X, tableY, { width: TBL_AMT_W, align: 'right' });
+        
+        tableY += rowHeight;
       }
 
-      doc.strokeColor('#1A3D63').lineWidth(1).moveTo(40, y + 10).lineTo(555, y + 10).stroke();
-
-      y += 25;
+      tableY += 8;
+      doc.strokeColor('#1A3D63').lineWidth(1).moveTo(MARGIN, tableY).lineTo(PAGE_WIDTH - MARGIN, tableY).stroke();
 
       // Summary Box
-      doc.fillColor('#F6FAFD').rect(300, y, 255, 90).fill('#F6FAFD');
-      doc.strokeColor('#B3CFE5').rect(300, y, 255, 90).stroke();
+      tableY += 15;
+      const BOX_W = 250;
+      const BOX_X = PAGE_WIDTH - MARGIN - BOX_W; // 305.28
+      const BOX_H = 85;
 
-      doc.fillColor('#0A1931').fontSize(10).font('Helvetica-Bold');
-      doc.text('Gross Earnings:', 310, y + 12);
-      doc.text(`₹ ${parseFloat(slip.gross_amount || 0).toLocaleString('en-IN')}`, 450, y + 12, { align: 'right' });
+      if (tableY + BOX_H > 750) {
+        doc.addPage();
+        tableY = 40;
+      }
 
-      doc.text('Total Deductions:', 310, y + 32);
-      doc.text(`- ₹ ${parseFloat(slip.deduction_amount || 0).toLocaleString('en-IN')}`, 450, y + 32, { align: 'right' });
+      doc.fillColor('#F6FAFD').rect(BOX_X, tableY, BOX_W, BOX_H).fill('#F6FAFD');
+      doc.strokeColor('#B3CFE5').lineWidth(1).rect(BOX_X, tableY, BOX_W, BOX_H).stroke();
 
-      doc.fillColor('#1A3D63').fontSize(12).font('Helvetica-Bold');
-      doc.text('NET PAYABLE:', 310, y + 60);
-      doc.text(`₹ ${parseFloat(slip.net_amount || 0).toLocaleString('en-IN')}`, 450, y + 60, { align: 'right' });
+      const SUM_LBL_X = BOX_X + 12;
+      const SUM_LBL_W = 110;
+      const SUM_AMT_X = BOX_X + 125;
+      const SUM_AMT_W = 113;
+
+      let sumY = tableY + 10;
+      doc.fillColor('#0A1931').fontSize(9).font('Helvetica-Bold');
+      doc.text('Gross Earnings:', SUM_LBL_X, sumY, { width: SUM_LBL_W });
+      doc.text(formatCurrencyINR(slip.gross_amount), SUM_AMT_X, sumY, { width: SUM_AMT_W, align: 'right' });
+
+      sumY += 20;
+      doc.text('Total Deductions:', SUM_LBL_X, sumY, { width: SUM_LBL_W });
+      doc.text(`- ${formatCurrencyINR(slip.deduction_amount)}`, SUM_AMT_X, sumY, { width: SUM_AMT_W, align: 'right' });
+
+      sumY += 24;
+      doc.fillColor('#1A3D63').fontSize(11).font('Helvetica-Bold');
+      doc.text('NET PAYABLE:', SUM_LBL_X, sumY, { width: SUM_LBL_W });
+      doc.text(formatCurrencyINR(slip.net_amount), SUM_AMT_X, sumY, { width: SUM_AMT_W, align: 'right' });
 
       // Footer
+      const footerY = 780;
       doc.fontSize(8).fillColor('#6B6375').font('Helvetica');
-      doc.text(`This is a computer-generated payslip reference: PAYSLIP-${slip.id} issued by PeoplePay360 on ${new Date().toLocaleDateString()}`, 40, 750, { align: 'center' });
+      doc.text(`This is a computer-generated payslip reference: PAYSLIP-${slip.id} issued by PeoplePay360 on ${formatPayslipDate(new Date())}`, MARGIN, footerY, { width: CONTENT_WIDTH, align: 'center' });
 
       doc.end();
     } catch (err) {

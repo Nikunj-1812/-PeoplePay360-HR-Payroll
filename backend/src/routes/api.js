@@ -35,6 +35,53 @@ router.post('/auth/login', asyncHandler(async (req, res) => {
   res.json({ success: true, ...result });
 }));
 
+// POST /api/auth/forgot-password
+router.post('/auth/forgot-password', asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, message: 'Email address is required' });
+  }
+  const result = await authService.requestPasswordReset(email);
+  res.json(result);
+}));
+
+// POST /api/auth/verify-reset-token
+router.post('/auth/verify-reset-token', asyncHandler(async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ success: false, message: 'Token is required' });
+  }
+  const result = await authService.verifyResetToken(token);
+  res.json(result);
+}));
+
+// POST /api/auth/reset-password
+router.post('/auth/reset-password', asyncHandler(async (req, res) => {
+  const { token, newPassword, confirmPassword } = req.body;
+  if (!token || !newPassword) {
+    return res.status(400).json({ success: false, message: 'Token and new password are required' });
+  }
+  if (confirmPassword && newPassword !== confirmPassword) {
+    return res.status(400).json({ success: false, message: 'Passwords do not match' });
+  }
+  const result = await authService.resetPassword(token, newPassword);
+  res.json(result);
+}));
+
+// POST /api/auth/change-password
+router.post('/auth/change-password', authenticateToken, asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+  if (!newPassword) {
+    return res.status(400).json({ success: false, message: 'New password is required' });
+  }
+  if (confirmPassword && newPassword !== confirmPassword) {
+    return res.status(400).json({ success: false, message: 'Passwords do not match' });
+  }
+  const result = await authService.changePassword(req.user.id, currentPassword, newPassword);
+  await redisService.del(`pp360:user:profile:${req.user.id}`);
+  res.json(result);
+}));
+
 // GET /api/auth/me
 router.get('/auth/me', authenticateToken, asyncHandler(async (req, res) => {
   const cacheKey = `pp360:user:profile:${req.user.id}`;
@@ -225,6 +272,12 @@ router.delete('/employees/:id', authenticateToken, requireRole(['hr_manager', 'h
   res.json({ success: true, data: deleted });
 }));
 
+// POST /api/employees/:id/resend-invitation
+router.post('/employees/:id/resend-invitation', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
+  const result = await employeeService.resendInvitation(req.params.id);
+  res.json({ success: true, ...result });
+}));
+
 // ==========================================
 // 4. CONTRACTS
 // ==========================================
@@ -390,15 +443,22 @@ const handleCheckOut = asyncHandler(async (req, res) => {
   res.json({ success: true, data: rec });
 });
 
+const { createRateLimiter } = require('../middleware/rateLimiter');
+const attendanceLimiter = createRateLimiter({
+  windowMs: 30000,
+  max: 5,
+  message: 'Too many attendance check-in/out attempts. Please wait a moment before trying again.'
+});
+
 // POST /api/attendance/check-in
-router.post('/attendance/check-in', authenticateToken, handleCheckIn);
+router.post('/attendance/check-in', authenticateToken, attendanceLimiter, handleCheckIn);
 // POST /api/attendance/clock-in
-router.post('/attendance/clock-in', authenticateToken, handleCheckIn);
+router.post('/attendance/clock-in', authenticateToken, attendanceLimiter, handleCheckIn);
 
 // POST /api/attendance/check-out
-router.post('/attendance/check-out', authenticateToken, handleCheckOut);
+router.post('/attendance/check-out', authenticateToken, attendanceLimiter, handleCheckOut);
 // POST /api/attendance/clock-out
-router.post('/attendance/clock-out', authenticateToken, handleCheckOut);
+router.post('/attendance/clock-out', authenticateToken, attendanceLimiter, handleCheckOut);
 
 // PUT /api/attendance/:id/correct
 router.put('/attendance/:id/correct', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
@@ -950,6 +1010,42 @@ router.get('/reports/payslips', authenticateToken, requireRole(['hr_payroll_user
   const data = await reportService.getPayslipHistoryReport(req.query);
   await redisService.set(cacheKey, data, 300);
   res.json({ success: true, data });
+}));
+
+function formatCSVCellBackend(val) {
+  if (val === null || val === undefined) return '""';
+  let str = String(val);
+  // Protect against spreadsheet formula injection (=, +, -, @, \t, \r)
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+  str = str.replace(/"/g, '""');
+  return `"${str}"`;
+}
+
+// GET /api/reports/:type/csv (Backend CSV export stream)
+router.get('/reports/:type/csv', authenticateToken, requireRole(['hr_manager', 'hr_payroll_user', 'hr_payroll_manager', 'admin']), asyncHandler(async (req, res) => {
+  const type = req.params.type;
+  let data = [];
+  if (type === 'employees') data = await reportService.getEmployeeReport(req.query);
+  else if (type === 'contracts') data = await reportService.getContractReport(req.query);
+  else if (type === 'attendance') data = await reportService.getAttendanceReport(req.query);
+  else if (type === 'time-off') data = await reportService.getTimeOffReport(req.query);
+  else if (type === 'payroll') data = await reportService.getPayrollReport(req.query);
+  else if (type === 'payslips') data = await reportService.getPayslipHistoryReport(req.query);
+  else return res.status(400).json({ success: false, message: 'Invalid report type for CSV export' });
+
+  if (data.length === 0) {
+    return res.status(404).json({ success: false, message: 'No records found to export' });
+  }
+
+  const headers = Object.keys(data[0]).map(formatCSVCellBackend).join(',');
+  const rows = data.map(row => Object.values(row).map(formatCSVCellBackend).join(','));
+  const csvContent = '\uFEFF' + [headers, ...rows].join('\r\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="PeoplePay360_${type}_report_${new Date().toISOString().split('T')[0]}.csv"`);
+  res.status(200).send(csvContent);
 }));
 
 module.exports = router;

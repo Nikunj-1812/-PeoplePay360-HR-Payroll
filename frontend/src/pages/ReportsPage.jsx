@@ -51,24 +51,39 @@ export default function ReportsPage() {
     fetchReportData();
   }, [activeReport]);
 
+  const formatCSVCell = (val) => {
+    if (val === null || val === undefined) return '""';
+    let str = String(val);
+    // Protect against spreadsheet formula injection (=, +, -, @, \t, \r)
+    if (/^[=+\-@\t\r]/.test(str)) {
+      str = "'" + str;
+    }
+    // Escape inner double quotes
+    str = str.replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
   const handleExportCSV = () => {
     if (!data || data.length === 0) {
       toast.error('No data available to export');
       return;
     }
 
-    const headers = Object.keys(data[0]).join(',');
+    const headers = Object.keys(data[0]).map(formatCSVCell).join(',');
     const rows = data.map(row => 
-      Object.values(row).map(val => `"${val !== null && val !== undefined ? String(val).replace(/"/g, '""') : ''}"`).join(',')
+      Object.values(row).map(formatCSVCell).join(',')
     );
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = [headers, ...rows].join('\r\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
+    link.setAttribute('href', url);
     link.setAttribute('download', `PeoplePay360_${activeReport}_report_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     toast.success('Report exported to CSV successfully');
   };
 

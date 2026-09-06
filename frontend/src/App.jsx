@@ -1,28 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
 import { SocketProvider } from './context/SocketContext';
-import { GlobalLoadingScreen } from './components/ui/Loading';
+import { GlobalLoadingScreen, CenteredSpinner } from './components/ui/Loading';
 import Shell from './components/layout/Shell';
 import LoginPage from './components/auth/LoginPage';
-
 import LandingPage from './components/landing/LandingPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import ForcedPasswordChangeModal from './components/auth/ForcedPasswordChangeModal';
 
-import DashboardPage from './pages/DashboardPage';
-import EmployeesPage from './pages/EmployeesPage';
-import ContractsPage from './pages/ContractsPage';
-import AttendancePage from './pages/AttendancePage';
-import TimeOffPage from './pages/TimeOffPage';
-import SalaryStructuresPage from './pages/SalaryStructuresPage';
-import PayrunsPage from './pages/PayrunsPage';
-import ReportsPage from './pages/ReportsPage';
-import SettingsPage from './pages/SettingsPage';
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
+const ContractsPage = lazy(() => import('./pages/ContractsPage'));
+const AttendancePage = lazy(() => import('./pages/AttendancePage'));
+const TimeOffPage = lazy(() => import('./pages/TimeOffPage'));
+const SalaryStructuresPage = lazy(() => import('./pages/SalaryStructuresPage'));
+const PayrunsPage = lazy(() => import('./pages/PayrunsPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showAuth, setShowAuth] = useState(false);
+
+  const pathname = window.location.pathname;
+  const isResetPasswordRoute = pathname === '/reset-password' || window.location.search.includes('token=');
 
   // Return to the public landing page whenever the session ends.
   React.useEffect(() => {
@@ -30,6 +34,10 @@ function AppContent() {
       setShowAuth(false);
     }
   }, [user]);
+
+  if (isResetPasswordRoute) {
+    return <ResetPasswordPage />;
+  }
 
   if (loading) {
     return <GlobalLoadingScreen message="Restoring authenticated session..." />;
@@ -71,7 +79,9 @@ function AppContent() {
   return (
     <Shell activeTab={activeTab} setActiveTab={setActiveTab}>
       <div key={activeTab} className="page-transition">
-        {renderContent()}
+        <Suspense fallback={<CenteredSpinner height="300px" />}>
+          {renderContent()}
+        </Suspense>
       </div>
     </Shell>
   );

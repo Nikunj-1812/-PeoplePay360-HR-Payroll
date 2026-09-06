@@ -102,7 +102,9 @@ function getTagsForUrl(url) {
   return tags;
 }
 
-// Client cache GET wrapper with user-scoped key
+const inFlightPromises = new Map();
+
+// Client cache GET wrapper with user-scoped key & in-flight promise deduplication
 api.getFetch = async (url, config = {}) => {
   const useCache = config.useCache !== false;
   const token = localStorage.getItem('pp360_token') || 'anon';
@@ -114,12 +116,26 @@ api.getFetch = async (url, config = {}) => {
     if (cached) return cached;
   }
 
-  const res = await api.get(url, config);
-  if (useCache && res) {
-    const tags = getTagsForUrl(url);
-    setCached(key, res, tags);
+  // Deduplicate identical in-flight requests
+  if (inFlightPromises.has(key)) {
+    return await inFlightPromises.get(key);
   }
-  return res;
+
+  const fetchPromise = (async () => {
+    try {
+      const res = await api.get(url, config);
+      if (useCache && res) {
+        const tags = getTagsForUrl(url);
+        setCached(key, res, tags);
+      }
+      return res;
+    } finally {
+      inFlightPromises.delete(key);
+    }
+  })();
+
+  inFlightPromises.set(key, fetchPromise);
+  return await fetchPromise;
 };
 
 // Invalidate specific tags

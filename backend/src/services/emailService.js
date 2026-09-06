@@ -78,4 +78,102 @@ async function sendBulkPayslips(payrunId) {
   };
 }
 
-module.exports = { sendBulkPayslips };
+async function sendOnboardingEmail({ employeeName, employeeEmail, temporaryPassword, resetToken }) {
+  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+  const setupUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
+  const transporter = createTransporter();
+
+  const html = `
+    <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; background-color: #F6FAFD; border: 1px solid #B3CFE5; border-radius: 12px; padding: 24px; color: #0A1931;">
+      <div style="text-align: center; padding-bottom: 16px; border-bottom: 2px solid #B3CFE5;">
+        <h1 style="color: #0A1931; font-size: 24px; margin: 0;">PeoplePay360</h1>
+        <p style="color: #4A7FA7; font-size: 13px; margin: 4px 0 0 0;">Integrated HR & Payroll Operations Platform</p>
+      </div>
+
+      <div style="padding: 20px 0;">
+        <h2 style="font-size: 18px; color: #0A1931; margin-top: 0;">Welcome to the Team, ${employeeName}!</h2>
+        <p style="font-size: 14px; line-height: 1.6;">Your employee account on <strong>PeoplePay360</strong> has been created successfully. Below are your initial login credentials:</p>
+        
+        <div style="background-color: #FFFFFF; border: 1px solid #B3CFE5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 4px 0; font-size: 13px;"><strong>Login Email:</strong> <code style="background: #F6FAFD; padding: 2px 6px; border-radius: 4px; color: #1A3D63;">${employeeEmail}</code></p>
+          <p style="margin: 4px 0; font-size: 13px;"><strong>Temporary Password:</strong> <code style="background: #F6FAFD; padding: 2px 6px; border-radius: 4px; color: #1A3D63;">${temporaryPassword}</code></p>
+        </div>
+
+        <p style="font-size: 13px; color: #1A3D63;"><strong>Important:</strong> For security reasons, you must set a new password when you first log in or by using the secure setup link below.</p>
+
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${setupUrl}" style="background-color: #B3CFE5; color: #0A1931; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 24px; border-radius: 6px; display: inline-block;">
+            Set Your New Password →
+          </a>
+        </div>
+
+        <p style="font-size: 12px; color: #4A7FA7;">This password setup link is valid for 24 hours. If the button above does not work, copy and paste the following link into your browser:<br/>
+        <a href="${setupUrl}" style="color: #1A3D63; word-break: break-all;">${setupUrl}</a></p>
+      </div>
+
+      <div style="text-align: center; padding-top: 16px; border-top: 1px solid #B3CFE5; font-size: 12px; color: #4A7FA7;">
+        <p style="margin: 0;">PeoplePay360 Operations Team | Secure HR Systems</p>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'PeoplePay360 HR'}" <${process.env.MAIL_FROM_EMAIL || process.env.SMTP_USER || 'hr@peoplepay360.com'}>`,
+      to: employeeEmail,
+      subject: `Welcome to PeoplePay360 - Account Credentials & Password Setup`,
+      html
+    });
+    return { success: true, emailSent: true };
+  } catch (err) {
+    console.error(`[Email Service Error] Onboarding email failed for ${employeeEmail}:`, err.message);
+    return { success: false, emailSent: false, error: err.message };
+  }
+}
+
+async function sendPasswordResetEmail({ email, name, resetToken }) {
+  const baseUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+  const setupUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
+  const transporter = createTransporter();
+
+  const html = `
+    <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; background-color: #F6FAFD; border: 1px solid #B3CFE5; border-radius: 12px; padding: 24px; color: #0A1931;">
+      <div style="text-align: center; padding-bottom: 16px; border-bottom: 2px solid #B3CFE5;">
+        <h1 style="color: #0A1931; font-size: 24px; margin: 0;">PeoplePay360</h1>
+        <p style="color: #4A7FA7; font-size: 13px; margin: 4px 0 0 0;">Password Reset Request</p>
+      </div>
+
+      <div style="padding: 20px 0;">
+        <p style="font-size: 14px; line-height: 1.6;">Hello <strong>${name || 'User'}</strong>,</p>
+        <p style="font-size: 14px; line-height: 1.6;">We received a request to reset your password for your PeoplePay360 account (<code>${email}</code>).</p>
+        
+        <div style="text-align: center; margin: 24px 0;">
+          <a href="${setupUrl}" style="background-color: #B3CFE5; color: #0A1931; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 24px; border-radius: 6px; display: inline-block;">
+            Reset Your Password →
+          </a>
+        </div>
+
+        <p style="font-size: 12px; color: #4A7FA7;">This password reset link expires in 24 hours. If you did not request a password reset, you can safely ignore this email.</p>
+      </div>
+
+      <div style="text-align: center; padding-top: 16px; border-top: 1px solid #B3CFE5; font-size: 12px; color: #4A7FA7;">
+        <p style="margin: 0;">PeoplePay360 HR Security Team</p>
+      </div>
+    </div>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"${process.env.MAIL_FROM_NAME || 'PeoplePay360 Security'}" <${process.env.MAIL_FROM_EMAIL || process.env.SMTP_USER || 'security@peoplepay360.com'}>`,
+      to: email,
+      subject: `Password Reset Request - PeoplePay360`,
+      html
+    });
+    return { success: true, emailSent: true };
+  } catch (err) {
+    console.error(`[Email Service Error] Reset email failed for ${email}:`, err.message);
+    return { success: false, emailSent: false, error: err.message };
+  }
+}
+
+module.exports = { sendBulkPayslips, sendOnboardingEmail, sendPasswordResetEmail };

@@ -3,6 +3,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../middleware/auth');
 
+const crypto = require('crypto');
+const { validatePassword } = require('../utils/passwordPolicy');
+const emailService = require('./emailService');
+
 // Authenticate user with email and password
 async function login(email, password) {
   if (!email || !password) {
@@ -54,7 +58,8 @@ async function login(email, password) {
       email: user.email,
       role: user.role,
       employee_id: user.employee_id,
-      position: user.job_position
+      position: user.job_position,
+      must_change_password: !!user.must_change_password
     }
   };
 }
@@ -62,19 +67,22 @@ async function login(email, password) {
 // Get authenticated user by ID
 async function getCurrentUser(userId) {
   const users = await sql`
-    SELECT u.id, u.name, u.email, u.role, u.employee_id, e.first_name, e.last_name, e.job_position, e.department_id
+    SELECT u.id, u.name, u.email, u.role, u.employee_id, u.must_change_password, e.first_name, e.last_name, e.job_position, e.department_id
     FROM users u
     LEFT JOIN employees e ON u.employee_id = e.id
     WHERE u.id = ${userId}
   `;
   if (users.length === 0) throw new Error('User not found.');
-  return users[0];
+  return {
+    ...users[0],
+    must_change_password: !!users[0].must_change_password
+  };
 }
 
 // Get all users for admin management
 async function getAllUsers() {
   return await sql`
-    SELECT u.id, u.name, u.email, u.role, u.employee_id, e.emp_id, e.first_name, e.last_name, e.job_position
+    SELECT u.id, u.name, u.email, u.role, u.employee_id, u.must_change_password, e.emp_id, e.first_name, e.last_name, e.job_position
     FROM users u
     LEFT JOIN employees e ON u.employee_id = e.id
     ORDER BY u.id ASC
@@ -162,8 +170,18 @@ async function updateUser(id, data) {
 
 // Admin: Reset user password
 async function resetUserPassword(id, newPassword) {
+  const validation = validatePassword(newPassword);
+  if (!validation.isValid) {
+    const err = new Error(`Password policy violation: ${validation.message}`);
+    err.status = 400;
+    throw err;
+  }
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await sql`UPDATE users SET password_hash = ${passwordHash} WHERE id = ${id}`;
+  await sql`
+    UPDATE users 
+    SET password_hash = ${passwordHash}, must_change_password = FALSE 
+    WHERE id = ${id}
+  `;
   return { success: true };
 }
 
@@ -173,6 +191,185 @@ async function deleteUser(id) {
   return deleted;
 }
 
+// Request Password Reset Link (Forgot Password)
+async function requestPasswordReset(email) {
+  if (!email || !String(email).includes('@')) {
+    const err = new Error('A valid email address is required.');
+    err.status = 400;
+    throw err;
+  }
+
+  const cleanEmail = String(email).trim().toLowerCase();
+  const users = await sql`SELECT id, name, email FROM users WHERE LOWER(TRIM(email)) = ${cleanEmail}`;
+
+  if (users.length === 0) {
+    // Return identical success response to prevent user enumeration
+    return { success: true, message: 'If an account exists with that email, a password reset link has been sent.' };
+  }
+
+  const user = users[0];
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  await sql`
+    UPDATE users SET
+      reset_token_hash = ${tokenHash},
+      reset_token_expires_at = ${expiresAt},
+      reset_token_used_at = NULL
+    WHERE id = ${user.id}
+  `;
+
+  await emailService.sendPasswordResetEmail({
+    email: user.email,
+    name: user.name,
+    resetToken: rawToken
+  });
+
+  return { success: true, message: 'If an account exists with that email, a password reset link has been sent.' };
+}
+
+// Verify Reset Token
+async function verifyResetToken(rawToken) {
+  if (!rawToken || typeof rawToken !== 'string') {
+    return { success: false, valid: false, message: 'This password setup link is invalid or has expired.' };
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  const users = await sql`
+    SELECT id, email, reset_token_expires_at, reset_token_used_at 
+    FROM users 
+    WHERE reset_token_hash = ${tokenHash}
+  `;
+
+  if (users.length === 0) {
+    return { success: false, valid: false, message: 'This password setup link is invalid or has expired.' };
+  }
+
+  const user = users[0];
+  if (user.reset_token_used_at) {
+    return { success: false, valid: false, message: 'This password setup link has already been used.' };
+  }
+
+  if (user.reset_token_expires_at && new Date(user.reset_token_expires_at).getTime() < Date.now()) {
+    return { success: false, valid: false, message: 'This password setup link has expired. Please request a new invitation.' };
+  }
+
+  return { success: true, valid: true, email: user.email };
+}
+
+// Reset Password using Token
+async function resetPassword({ token, newPassword, confirmPassword }) {
+  if (!token) {
+    const err = new Error('This password setup link is invalid or has expired.');
+    err.status = 400;
+    throw err;
+  }
+
+  if (newPassword !== confirmPassword) {
+    const err = new Error('Passwords do not match.');
+    err.status = 400;
+    throw err;
+  }
+
+  const validation = validatePassword(newPassword);
+  if (!validation.isValid) {
+    const err = new Error(`Password policy violation: ${validation.message}`);
+    err.status = 400;
+    throw err;
+  }
+
+  const verification = await verifyResetToken(token);
+  if (!verification.valid) {
+    const err = new Error(verification.message);
+    err.status = 400;
+    throw err;
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+  const [updated] = await sql`
+    UPDATE users SET
+      password_hash = ${newPasswordHash},
+      must_change_password = FALSE,
+      reset_token_used_at = NOW()
+    WHERE reset_token_hash = ${tokenHash}
+      AND reset_token_used_at IS NULL
+    RETURNING id, email
+  `;
+
+  if (!updated) {
+    const err = new Error('This password setup link is invalid or has expired.');
+    err.status = 400;
+    throw err;
+  }
+
+  return { success: true, message: 'Password updated successfully. You can now log in with your new password.' };
+}
+
+// Authenticated User Forced / Voluntary Password Change
+async function changePassword(userId, arg2, arg3, arg4) {
+  let currentPassword, newPassword, confirmPassword;
+  if (typeof arg2 === 'object' && arg2 !== null) {
+    currentPassword = arg2.currentPassword;
+    newPassword = arg2.newPassword;
+    confirmPassword = arg2.confirmPassword || arg2.newPassword;
+  } else {
+    currentPassword = arg2;
+    newPassword = arg3;
+    confirmPassword = arg4 || arg3;
+  }
+
+  const cleanId = parseInt(userId, 10);
+  if (!cleanId || isNaN(cleanId)) {
+    const err = new Error('Invalid user context.');
+    err.status = 401;
+    throw err;
+  }
+
+  if (!newPassword || newPassword !== confirmPassword) {
+    const err = new Error('New passwords do not match.');
+    err.status = 400;
+    throw err;
+  }
+
+  const validation = validatePassword(newPassword);
+  if (!validation.isValid) {
+    const err = new Error(`Password policy violation: ${validation.message}`);
+    err.status = 400;
+    throw err;
+  }
+
+  const users = await sql`SELECT id, password_hash FROM users WHERE id = ${cleanId}`;
+  if (users.length === 0) {
+    const err = new Error('User not found.');
+    err.status = 404;
+    throw err;
+  }
+
+  const user = users[0];
+  if (user.password_hash && currentPassword) {
+    const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!isMatch) {
+      const err = new Error('Current password is incorrect.');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  const newPasswordHash = await bcrypt.hash(newPassword, 10);
+  await sql`
+    UPDATE users SET
+      password_hash = ${newPasswordHash},
+      must_change_password = FALSE
+    WHERE id = ${cleanId}
+  `;
+
+  return { success: true, message: 'Password changed successfully.' };
+}
+
 module.exports = {
   login,
   getCurrentUser,
@@ -180,5 +377,9 @@ module.exports = {
   createUser,
   updateUser,
   resetUserPassword,
-  deleteUser
+  deleteUser,
+  requestPasswordReset,
+  verifyResetToken,
+  resetPassword,
+  changePassword
 };

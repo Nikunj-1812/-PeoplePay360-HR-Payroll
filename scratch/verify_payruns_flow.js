@@ -12,7 +12,9 @@ async function testPayrunsFlow() {
     console.log(`✓ Found ${eligible.length} eligible employees.`);
     if (eligible.length === 0) throw new Error('FAILED: No eligible employees found.');
 
-    const empIds = eligible.slice(0, 3).map(e => e.id);
+    const empWithContracts = eligible.filter(e => e.contract_id);
+    console.log(`✓ Employees with active contracts: ${empWithContracts.length}`);
+    const empIds = empWithContracts.slice(0, 5).map(e => e.id);
     const testName = `Test Batch ${Date.now()}`;
 
     // 2. Create Payrun (Step 2 completion)

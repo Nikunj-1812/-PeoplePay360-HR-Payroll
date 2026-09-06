@@ -75,6 +75,18 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const refreshUser = async () => {
+    try {
+      const meRes = await api.get('/auth/me');
+      if (meRes && meRes.data) {
+        setUser(meRes.data);
+        return meRes.data;
+      }
+    } catch (err) {
+      console.warn('Failed to refresh user profile:', err);
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('pp360_token');
     clearAllCache();
@@ -82,7 +94,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser, setUser }}>
       {children}
     </AuthContext.Provider>
   );

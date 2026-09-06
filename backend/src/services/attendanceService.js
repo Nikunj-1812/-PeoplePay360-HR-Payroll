@@ -1,5 +1,8 @@
 const { sql } = require('../db');
 
+// Max single shift threshold (in hours) before flagging an excessive shift exception
+const MAX_STANDARD_SHIFT_HOURS = 12.0;
+
 async function getAttendance(filters = {}) {
   return await sql`
     SELECT 
@@ -38,20 +41,24 @@ async function clockIn(employeeId) {
   if (existing.length > 0) {
     const rec = existing[0];
     if (rec.check_in && !rec.check_out) {
-      const err = new Error('You are already checked in for today.');
+      const err = new Error('You are already checked in for today. Please check out first before starting a new session.');
       err.status = 400;
       throw err;
     }
-    if (rec.check_in && rec.check_out) {
-      const err = new Error('You have already completed attendance for today.');
-      err.status = 400;
-      throw err;
-    }
+    // If previous session for today is completed (check_out is set), allow starting a new split-shift session
+  }
+
+  // Determine if late based on employee schedule (default 09:15)
+  let status = 'Present';
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  if (hours > 9 || (hours === 9 && minutes > 15)) {
+    status = 'Late';
   }
 
   const [rec] = await sql`
     INSERT INTO attendance (employee_id, date, check_in, status)
-    VALUES (${cleanId}, ${todayStr}, ${nowISO}, 'Present')
+    VALUES (${cleanId}, ${todayStr}, ${nowISO}, ${status})
     RETURNING *
   `;
   return rec;
@@ -84,16 +91,36 @@ async function clockOut(employeeId) {
   }
 
   const rec = existing[0];
-  let checkInTime = rec.check_in ? new Date(rec.check_in).getTime() : Date.now();
-  if (isNaN(checkInTime)) checkInTime = Date.now() - (8 * 3600 * 1000);
-  const checkOutTime = Date.now();
-  let workedHours = Math.max(0.01, parseFloat(((checkOutTime - checkInTime) / (1000 * 60 * 60)).toFixed(2)));
+  const checkInTime = new Date(rec.check_in).getTime();
+  const checkOutTime = now.getTime();
+
+  // Validate checkout after check-in
+  if (checkOutTime < checkInTime) {
+    const err = new Error('Check Out time cannot be earlier than Check In time.');
+    err.status = 400;
+    throw err;
+  }
+
+  let workedHours = parseFloat(((checkOutTime - checkInTime) / (1000 * 60 * 60)).toFixed(2));
+  workedHours = Math.max(0.01, workedHours);
+
+  let status = rec.status || 'Present';
+  let exceptionNote = rec.exception_note || '';
+
+  // Flag excessive shift duration (>12h)
+  if (workedHours > MAX_STANDARD_SHIFT_HOURS) {
+    status = 'Overtime';
+    exceptionNote = exceptionNote 
+      ? `${exceptionNote} | Flagged: Excessive shift duration (${workedHours}h)`
+      : `Flagged: Excessive shift duration (${workedHours}h)`;
+  }
 
   const [updated] = await sql`
     UPDATE attendance SET
       check_out = ${nowISO},
       worked_hours = ${workedHours},
-      status = 'Present'
+      status = ${status},
+      exception_note = ${exceptionNote || null}
     WHERE id = ${rec.id}
     RETURNING *
   `;
@@ -101,17 +128,57 @@ async function clockOut(employeeId) {
 }
 
 async function correctAttendance(id, data) {
+  const cleanId = parseInt(id, 10);
   const { status, check_in, check_out, worked_hours, exception_note, corrected_by } = data;
+
+  // Validate timestamps if both check_in and check_out provided
+  if (check_in && check_out) {
+    const inTime = new Date(check_in).getTime();
+    const outTime = new Date(check_out).getTime();
+
+    if (isNaN(inTime) || isNaN(outTime)) {
+      const err = new Error('Invalid date/time format for attendance correction.');
+      err.status = 400;
+      throw err;
+    }
+
+    if (outTime < inTime) {
+      const err = new Error('Check Out time cannot be earlier than Check In time.');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  let computedWorked = parseFloat(worked_hours) || 0;
+  if (check_in && check_out && computedWorked === 0) {
+    const inTime = new Date(check_in).getTime();
+    const outTime = new Date(check_out).getTime();
+    computedWorked = parseFloat(((outTime - inTime) / (1000 * 60 * 60)).toFixed(2));
+  }
+
+  let finalExceptionNote = exception_note || '';
+  let finalStatus = status || 'Present';
+
+  if (computedWorked > MAX_STANDARD_SHIFT_HOURS) {
+    if (!finalExceptionNote.includes('Excessive shift')) {
+      finalExceptionNote = finalExceptionNote 
+        ? `${finalExceptionNote} | Flagged: Excessive shift duration (${computedWorked}h)`
+        : `Flagged: Excessive shift duration (${computedWorked}h)`;
+    }
+    if (finalStatus === 'Present') {
+      finalStatus = 'Overtime';
+    }
+  }
 
   const [updated] = await sql`
     UPDATE attendance SET
-      status = ${status},
+      status = ${finalStatus},
       check_in = ${check_in || null},
       check_out = ${check_out || null},
-      worked_hours = ${worked_hours || 0},
-      exception_note = ${exception_note || ''},
+      worked_hours = ${computedWorked},
+      exception_note = ${finalExceptionNote || null},
       corrected_by = ${corrected_by || 'HR Admin'}
-    WHERE id = ${id}
+    WHERE id = ${cleanId}
     RETURNING *
   `;
   return updated;

@@ -6,187 +6,205 @@ async function getDashboardData(filters = {}) {
   const employeeType = (filters.employeeType && filters.employeeType !== 'All') ? filters.employeeType : null;
   const empId = filters.employee_id ? parseInt(filters.employee_id, 10) : null;
 
-  // 1. KPI: Total Net Salary Paid, Payslips Generated, Average Salary
-  const [netPaidResult] = await sql`
-    SELECT 
-      COALESCE(SUM(p.net_amount), 0)::numeric as total_net_paid,
-      COUNT(DISTINCT p.id)::int as total_payslips,
-      COALESCE(AVG(p.net_amount), 0)::numeric as avg_salary
-    FROM payslips p
-    JOIN payruns pr ON p.payrun_id = pr.id
-    JOIN employees e ON p.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
-    WHERE pr.status = 'Paid'
-      AND (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${period}::text IS NULL OR pr.name ILIKE ${'%' + (period || '') + '%'})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-  `;
+  // Execute all independent queries concurrently via Promise.all
+  const [
+    [netPaidResult],
+    [leaveResult],
+    [attendanceResult],
+    deptSalaryChart,
+    monthlyTrendsChart,
+    [payrunStatusResult],
+    [missingBank],
+    [missingCheckouts],
+    [pendingLeave],
+    [zeroWageContracts],
+    [expiringContracts],
+    timeOffOverview,
+    departmentOverview
+  ] = await Promise.all([
+    // 1. KPI: Total Net Salary Paid, Payslips Generated, Average Salary
+    sql`
+      SELECT 
+        COALESCE(SUM(p.net_amount), 0)::numeric as total_net_paid,
+        COUNT(DISTINCT p.id)::int as total_payslips,
+        COALESCE(AVG(p.net_amount), 0)::numeric as avg_salary
+      FROM payslips p
+      JOIN payruns pr ON p.payrun_id = pr.id
+      JOIN employees e ON p.employee_id = e.id
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
+      WHERE pr.status = 'Paid'
+        AND (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${period}::text IS NULL OR pr.name ILIKE ${'%' + (period || '') + '%'})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+    `,
+    // 2. KPI: Approved Time Off (Days)
+    sql`
+      SELECT COALESCE(SUM(r.duration), 0)::numeric as approved_days
+      FROM time_off_requests r
+      JOIN employees e ON r.employee_id = e.id
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
+      WHERE r.status = 'Approved'
+        AND (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+        AND (${period}::text IS NULL OR TO_CHAR(r.start_date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
+    `,
+    // 3. KPI: Attendance Health & Breakdown
+    sql`
+      SELECT 
+        COUNT(*)::int as total_records,
+        COUNT(CASE WHEN a.status = 'Present' THEN 1 END)::int as present_count,
+        COUNT(CASE WHEN a.status = 'Late' THEN 1 END)::int as late_count,
+        COUNT(CASE WHEN a.status = 'Absent' THEN 1 END)::int as absent_count,
+        COUNT(CASE WHEN a.status = 'Overtime' THEN 1 END)::int as overtime_count,
+        COUNT(CASE WHEN a.status = 'Missing Checkout' THEN 1 END)::int as missing_checkout_count
+      FROM attendance a
+      JOIN employees e ON a.employee_id = e.id
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
+      WHERE (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+        AND (${period}::text IS NULL OR TO_CHAR(a.date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
+    `,
+    // 4. Chart: Salary Cost by Department
+    sql`
+      SELECT 
+        d.name as department,
+        COALESCE(SUM(p.net_amount), 0)::numeric as total_cost,
+        COUNT(DISTINCT e.id)::int as headcount
+      FROM departments d
+      LEFT JOIN employees e ON e.department_id = d.id
+      LEFT JOIN payslips p ON p.employee_id = e.id
+      LEFT JOIN payruns pr ON p.payrun_id = pr.id
+      LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
+      WHERE (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+        AND (${period}::text IS NULL OR pr.name ILIKE ${'%' + (period || '') + '%'})
+      GROUP BY d.id, d.name
+      ORDER BY total_cost DESC
+    `,
+    // 5. Chart: Monthly Net Salary Trends
+    sql`
+      SELECT 
+        pr.name as period,
+        COALESCE(pr.total_net, 0)::numeric as net_salary,
+        COALESCE(pr.total_gross, 0)::numeric as gross_salary
+      FROM payruns pr
+      WHERE (${period}::text IS NULL OR pr.name ILIKE ${'%' + (period || '') + '%'})
+      ORDER BY pr.id ASC
+      LIMIT 6
+    `,
+    // 6. Payrun Status Breakdown (including Failed status)
+    sql`
+      SELECT 
+        COUNT(CASE WHEN status = 'Paid' THEN 1 END)::int as paid_count,
+        COUNT(CASE WHEN status = 'Validated' THEN 1 END)::int as validated_count,
+        COUNT(CASE WHEN status = 'Computed' THEN 1 END)::int as computed_count,
+        COUNT(CASE WHEN status = 'Draft' THEN 1 END)::int as draft_count,
+        COUNT(CASE WHEN status = 'Failed' THEN 1 END)::int as failed_count,
+        COUNT(*)::int as total_payruns
+      FROM payruns pr
+      WHERE (${period}::text IS NULL OR pr.name ILIKE ${'%' + (period || '') + '%'})
+    `,
+    // 7a. Missing Bank
+    sql`
+      SELECT COUNT(DISTINCT e.id)::int as count 
+      FROM employees e
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
+      WHERE (e.bank_name IS NULL OR e.account_number IS NULL)
+        AND (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+    `,
+    // 7b. Missing Checkouts
+    sql`
+      SELECT COUNT(DISTINCT a.id)::int as count 
+      FROM attendance a
+      JOIN employees e ON a.employee_id = e.id
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
+      WHERE a.status = 'Missing Checkout'
+        AND (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+        AND (${period}::text IS NULL OR TO_CHAR(a.date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
+    `,
+    // 7c. Pending Leave Requests
+    sql`
+      SELECT COUNT(DISTINCT r.id)::int as count 
+      FROM time_off_requests r
+      JOIN employees e ON r.employee_id = e.id
+      LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
+      WHERE r.status = 'Pending'
+        AND (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+        AND (${period}::text IS NULL OR TO_CHAR(r.start_date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
+    `,
+    // 7d. Zero Wage Contracts
+    sql`
+      SELECT COUNT(DISTINCT c.id)::int as count 
+      FROM contracts c
+      JOIN employees e ON c.employee_id = e.id
+      LEFT JOIN departments d ON e.department_id = d.id
+      WHERE (c.wage <= 0 OR c.wage IS NULL)
+        AND (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+    `,
+    // 7e. Expiring Contracts
+    sql`
+      SELECT COUNT(DISTINCT c.id)::int as count 
+      FROM contracts c
+      JOIN employees e ON c.employee_id = e.id
+      LEFT JOIN departments d ON e.department_id = d.id
+      WHERE c.status = 'Active' AND c.end_date <= CURRENT_DATE + INTERVAL '30 days'
+        AND (${empId}::int IS NULL OR e.id = ${empId})
+        AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+    `,
+    // 8. Time Off Overview by Type
+    sql`
+      SELECT 
+        t.name as type_name,
+        COALESCE(SUM(r.duration) FILTER (WHERE r.status = 'Approved'), 0)::numeric as approved_days,
+        COALESCE(COUNT(r.id) FILTER (WHERE r.status = 'Pending'), 0)::int as pending_count,
+        COALESCE(SUM(a.remaining_days), 0)::numeric as remaining_balance
+      FROM time_off_types t
+      LEFT JOIN time_off_requests r ON r.time_off_type_id = t.id
+        AND (${empId}::int IS NULL OR r.employee_id = ${empId})
+        AND (${period}::text IS NULL OR TO_CHAR(r.start_date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
+      LEFT JOIN time_off_allocations a ON a.time_off_type_id = t.id
+        AND (${empId}::int IS NULL OR a.employee_id = ${empId})
+      GROUP BY t.id, t.name
+      ORDER BY t.id ASC
+    `,
+    // 9. Department Overview Table
+    sql`
+      SELECT 
+        d.name as department_name,
+        COUNT(DISTINCT e.id)::int as headcount,
+        COALESCE(SUM(c.wage), 0)::numeric as monthly_salary
+      FROM departments d
+      LEFT JOIN employees e ON e.department_id = d.id AND e.status = 'Active'
+        AND (${empId}::int IS NULL OR e.id = ${empId})
+      LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
+        AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
+      WHERE (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
+      GROUP BY d.id, d.name
+      ORDER BY headcount DESC
+    `
+  ]);
 
-  // 2. KPI: Approved Time Off (Days)
-  const [leaveResult] = await sql`
-    SELECT COALESCE(SUM(r.duration), 0)::numeric as approved_days
-    FROM time_off_requests r
-    JOIN employees e ON r.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
-    WHERE r.status = 'Approved'
-      AND (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-      AND (${period}::text IS NULL OR TO_CHAR(r.start_date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
-  `;
-
-  // 3. KPI: Attendance Health & Breakdown
-  const [attendanceResult] = await sql`
-    SELECT 
-      COUNT(*)::int as total_records,
-      COUNT(CASE WHEN a.status = 'Present' THEN 1 END)::int as present_count,
-      COUNT(CASE WHEN a.status = 'Late' THEN 1 END)::int as late_count,
-      COUNT(CASE WHEN a.status = 'Absent' THEN 1 END)::int as absent_count,
-      COUNT(CASE WHEN a.status = 'Overtime' THEN 1 END)::int as overtime_count,
-      COUNT(CASE WHEN a.status = 'Missing Checkout' THEN 1 END)::int as missing_checkout_count
-    FROM attendance a
-    JOIN employees e ON a.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
-    WHERE (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-      AND (${period}::text IS NULL OR TO_CHAR(a.date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
-  `;
   const totalAtt = attendanceResult.total_records || 1;
   const attendanceHealth = Math.round((attendanceResult.present_count / totalAtt) * 100);
-
-  // 4. Chart: Salary Cost by Department
-  const deptSalaryChart = await sql`
-    SELECT 
-      d.name as department,
-      COALESCE(SUM(p.net_amount), 0)::numeric as total_cost,
-      COUNT(DISTINCT e.id)::int as headcount
-    FROM departments d
-    LEFT JOIN employees e ON e.department_id = d.id
-    LEFT JOIN payslips p ON p.employee_id = e.id
-    LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
-    WHERE (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-    GROUP BY d.id, d.name
-    ORDER BY total_cost DESC
-  `;
-
-  // 5. Chart: Monthly Net Salary Trends
-  const monthlyTrendsChart = await sql`
-    SELECT 
-      pr.name as period,
-      COALESCE(pr.total_net, 0)::numeric as net_salary,
-      COALESCE(pr.total_gross, 0)::numeric as gross_salary
-    FROM payruns pr
-    WHERE (${period}::text IS NULL OR pr.name ILIKE ${'%' + (period || '') + '%'})
-    ORDER BY pr.id ASC
-    LIMIT 6
-  `;
-
-  // 6. Payrun Status Breakdown
-  const [payrunStatusResult] = await sql`
-    SELECT 
-      COUNT(CASE WHEN status = 'Paid' THEN 1 END)::int as paid_count,
-      COUNT(CASE WHEN status = 'Validated' THEN 1 END)::int as validated_count,
-      COUNT(CASE WHEN status = 'Computed' THEN 1 END)::int as computed_count,
-      COUNT(CASE WHEN status = 'Draft' THEN 1 END)::int as draft_count,
-      COUNT(*)::int as total_payruns
-    FROM payruns pr
-    WHERE (${period}::text IS NULL OR pr.name ILIKE ${'%' + (period || '') + '%'})
-  `;
-
-  // 7. Operational & Payroll Alerts
-  const [missingBank] = await sql`
-    SELECT COUNT(DISTINCT e.id)::int as count 
-    FROM employees e
-    LEFT JOIN departments d ON e.department_id = d.id
-    LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
-    WHERE (e.bank_name IS NULL OR e.account_number IS NULL)
-      AND (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-  `;
-  const [missingCheckouts] = await sql`
-    SELECT COUNT(DISTINCT a.id)::int as count 
-    FROM attendance a
-    JOIN employees e ON a.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
-    WHERE a.status = 'Missing Checkout'
-      AND (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-      AND (${period}::text IS NULL OR TO_CHAR(a.date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
-  `;
-  const [pendingLeave] = await sql`
-    SELECT COUNT(DISTINCT r.id)::int as count 
-    FROM time_off_requests r
-    JOIN employees e ON r.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
-    WHERE r.status = 'Pending'
-      AND (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-      AND (${period}::text IS NULL OR TO_CHAR(r.start_date, 'FMMonth YYYY') ILIKE ${'%' + (period || '') + '%'})
-  `;
-  const [zeroWageContracts] = await sql`
-    SELECT COUNT(DISTINCT c.id)::int as count 
-    FROM contracts c
-    JOIN employees e ON c.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    WHERE (c.wage <= 0 OR c.wage IS NULL)
-      AND (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-  `;
-  const [expiringContracts] = await sql`
-    SELECT COUNT(DISTINCT c.id)::int as count 
-    FROM contracts c
-    JOIN employees e ON c.employee_id = e.id
-    LEFT JOIN departments d ON e.department_id = d.id
-    WHERE c.status = 'Active' AND c.end_date <= CURRENT_DATE + INTERVAL '30 days'
-      AND (${empId}::int IS NULL OR e.id = ${empId})
-      AND (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-  `;
-
-  // 8. Time Off Overview by Type
-  const timeOffOverview = await sql`
-    SELECT 
-      t.name as type_name,
-      COALESCE(SUM(r.duration) FILTER (WHERE r.status = 'Approved'), 0)::numeric as approved_days,
-      COALESCE(COUNT(r.id) FILTER (WHERE r.status = 'Pending'), 0)::int as pending_count,
-      COALESCE(SUM(a.remaining_days), 0)::numeric as remaining_balance
-    FROM time_off_types t
-    LEFT JOIN time_off_requests r ON r.time_off_type_id = t.id
-      AND (${empId}::int IS NULL OR r.employee_id = ${empId})
-    LEFT JOIN time_off_allocations a ON a.time_off_type_id = t.id
-      AND (${empId}::int IS NULL OR a.employee_id = ${empId})
-    GROUP BY t.id, t.name
-    ORDER BY t.id ASC
-  `;
-
-  // 9. Department Overview Table
-  const departmentOverview = await sql`
-    SELECT 
-      d.name as department_name,
-      COUNT(DISTINCT e.id)::int as headcount,
-      COALESCE(SUM(c.wage), 0)::numeric as monthly_salary
-    FROM departments d
-    LEFT JOIN employees e ON e.department_id = d.id AND e.status = 'Active'
-      AND (${empId}::int IS NULL OR e.id = ${empId})
-    LEFT JOIN contracts c ON c.employee_id = e.id AND c.status = 'Active'
-      AND (${employeeType}::text IS NULL OR c.employment_terms ILIKE ${'%' + (employeeType || '') + '%'})
-    WHERE (${department}::text IS NULL OR d.name ILIKE ${'%' + (department || '') + '%'})
-    GROUP BY d.id, d.name
-    ORDER BY headcount DESC
-  `;
 
   return {
     kpis: {
@@ -205,6 +223,7 @@ async function getDashboardData(filters = {}) {
       validated: payrunStatusResult.validated_count || 0,
       computed: payrunStatusResult.computed_count || 0,
       draft: payrunStatusResult.draft_count || 0,
+      failed: payrunStatusResult.failed_count || 0,
       total: payrunStatusResult.total_payruns || 0
     },
     alerts: {
@@ -237,4 +256,3 @@ async function getDashboardData(filters = {}) {
 }
 
 module.exports = { getDashboardData };
-

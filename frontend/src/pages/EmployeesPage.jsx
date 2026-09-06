@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { subscribeCache } from '../api/cache';
 import { useToast } from '../context/ToastContext';
-import { Search, Plus, LayoutGrid, List, Mail, Building2, ShieldCheck, Trash2, Edit2, FileText, Receipt, Download } from 'lucide-react';
+import { Search, Plus, LayoutGrid, List, Mail, Building2, ShieldCheck, Trash2, Edit2, FileText, Receipt, Download, Send } from 'lucide-react';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CenteredSpinner } from '../components/ui/Loading';
 
@@ -264,14 +264,24 @@ export default function EmployeesPage({ onNavigateTab }) {
                 <span className={`badge ${emp.status === 'Active' ? 'badge-active' : 'badge-danger'}`}>{emp.status}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {canManageEmployees && (
-                    <button
-                      onClick={(e) => handleEditEmployee(emp, e)}
-                      className="btn btn-secondary"
-                      title="Edit Employee & Role"
-                      style={{ padding: '4px 6px' }}
-                    >
-                      <Edit2 size={13} />
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => handleResendInvitation(emp, e)}
+                        className="btn btn-secondary"
+                        title="Resend Onboarding Invitation"
+                        style={{ padding: '4px 6px', color: 'var(--secondary-blue)' }}
+                      >
+                        <Send size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => handleEditEmployee(emp, e)}
+                        className="btn btn-secondary"
+                        title="Edit Employee & Role"
+                        style={{ padding: '4px 6px' }}
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                    </>
                   )}
                   {canDeleteEmployee && (
                     <button 
@@ -322,14 +332,24 @@ export default function EmployeesPage({ onNavigateTab }) {
                       View Detail
                     </button>
                     {canManageEmployees && (
-                      <button
-                        onClick={(e) => handleEditEmployee(emp, e)}
-                        className="btn btn-secondary"
-                        title="Edit Employee & Role"
-                        style={{ padding: '4px 8px', fontSize: '12px' }}
-                      >
-                        <Edit2 size={13} />
-                      </button>
+                      <>
+                        <button
+                          onClick={(e) => handleResendInvitation(emp, e)}
+                          className="btn btn-secondary"
+                          title="Resend Onboarding Invitation"
+                          style={{ padding: '4px 8px', fontSize: '12px', color: 'var(--secondary-blue)', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <Send size={13} /> Invitation
+                        </button>
+                        <button
+                          onClick={(e) => handleEditEmployee(emp, e)}
+                          className="btn btn-secondary"
+                          title="Edit Employee & Role"
+                          style={{ padding: '4px 8px', fontSize: '12px' }}
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                      </>
                     )}
                     {canDeleteEmployee && (
                       <button 

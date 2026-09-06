@@ -1,12 +1,14 @@
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const { sql } = require('./db');
 const { initializeDatabase } = require('./schema');
 const apiRouter = require('./routes/api');
 const { initSocket } = require('./services/socketService');
 
 const app = express();
+app.use(compression());
 const server = http.createServer(app);
 const port = Number(process.env.PORT) || 5000;
 

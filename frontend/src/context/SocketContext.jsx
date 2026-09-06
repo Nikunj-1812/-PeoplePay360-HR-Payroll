@@ -6,6 +6,7 @@ import { invalidateCache } from '../api/cache';
 const SocketContext = createContext({
   socket: null,
   isConnected: false,
+  connectionStatus: 'disconnected', // 'connected' | 'connecting' | 'disconnected' | 'reconnecting' | 'error'
   socketError: null,
   subscribeEvent: () => () => {}
 });
@@ -13,6 +14,7 @@ const SocketContext = createContext({
 export function SocketProvider({ children }) {
   const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [socketError, setSocketError] = useState(null);
   const [socketInstance, setSocketInstance] = useState(null);
 
@@ -23,9 +25,11 @@ export function SocketProvider({ children }) {
       disconnectSocket();
       setSocketInstance(null);
       setIsConnected(false);
+      setConnectionStatus('disconnected');
       return;
     }
 
+    setConnectionStatus('connecting');
     const socket = getSocket(token);
     setSocketInstance(socket);
 
@@ -33,33 +37,49 @@ export function SocketProvider({ children }) {
 
     function handleConnect() {
       setIsConnected(true);
+      setConnectionStatus('connected');
       setSocketError(null);
+
+      // On connection or reconnection, re-sync application cache with latest server state
+      invalidateCache([
+        'user', 'profile', 'users',
+        'employees', 'contracts', 'schedules',
+        'attendance', 'timeoff', 'salary',
+        'payruns', 'payslips', 'dashboard'
+      ]);
     }
 
     function handleDisconnect(reason) {
       setIsConnected(false);
+      setConnectionStatus('disconnected');
       console.log('[SocketContext] Real-time disconnected:', reason);
     }
 
     function handleConnectError(err) {
       setIsConnected(false);
+      setConnectionStatus('error');
       setSocketError(err?.message || 'Connection error');
+    }
+
+    function handleReconnectAttempt(attempt) {
+      setConnectionStatus('reconnecting');
+      console.log(`[SocketContext] Reconnection attempt #${attempt}...`);
     }
 
     // Attach core connection listeners
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
+    socket.io?.on('reconnect_attempt', handleReconnectAttempt);
 
     if (socket.connected) {
-      setIsConnected(true);
+      handleConnect();
     }
 
     // Register central domain event listeners for automatic cache invalidation
     const handleUserUpdate = (data) => {
       invalidateCache(['user', 'profile', 'users']);
       if (data && data.user && user && String(data.user.id) === String(user.id)) {
-        // If current user's profile or role was modified, reload app state safely
         window.dispatchEvent(new CustomEvent('pp360_user_revalidate'));
       }
     };
@@ -94,6 +114,7 @@ export function SocketProvider({ children }) {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
+      socket.io?.off('reconnect_attempt', handleReconnectAttempt);
 
       socket.off('USER_CREATED', handleUserUpdate);
       socket.off('USER_UPDATED', handleUserUpdate);
@@ -123,7 +144,7 @@ export function SocketProvider({ children }) {
   }, [socketInstance]);
 
   return (
-    <SocketContext.Provider value={{ socket: socketInstance, isConnected, socketError, subscribeEvent }}>
+    <SocketContext.Provider value={{ socket: socketInstance, isConnected, connectionStatus, socketError, subscribeEvent }}>
       {children}
     </SocketContext.Provider>
   );

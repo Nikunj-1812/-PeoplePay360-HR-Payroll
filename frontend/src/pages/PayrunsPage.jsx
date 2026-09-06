@@ -637,6 +637,7 @@ export default function PayrunsPage() {
                 <option value="Computed">Computed</option>
                 <option value="Validated">Validated</option>
                 <option value="Paid">Paid</option>
+                <option value="Failed">Failed</option>
               </select>
             </div>
 
@@ -736,7 +737,7 @@ export default function PayrunsPage() {
                         {parseFloat(pr.total_net || 0).toLocaleString("en-IN")}
                       </span>
                       <span
-                        className={`badge ${pr.status === "Paid" ? "badge-paid" : pr.status === "Computed" ? "badge-computed" : "badge-warning"}`}
+                        className={`badge ${pr.status === "Paid" ? "badge-paid" : pr.status === "Validated" ? "badge-validated" : pr.status === "Computed" ? "badge-computed" : pr.status === "Failed" ? "badge-failed" : "badge-warning"}`}
                       >
                         {pr.status}
                       </span>
@@ -804,7 +805,7 @@ export default function PayrunsPage() {
                       {selectedPayrun.name}
                     </h2>
                     <span
-                      className={`badge ${selectedPayrun.status === "Paid" ? "badge-paid" : "badge-warning"}`}
+                      className={`badge ${selectedPayrun.status === "Paid" ? "badge-paid" : selectedPayrun.status === "Validated" ? "badge-validated" : selectedPayrun.status === "Computed" ? "badge-computed" : selectedPayrun.status === "Failed" ? "badge-failed" : "badge-warning"}`}
                     >
                       {selectedPayrun.status}
                     </span>
@@ -921,34 +922,88 @@ export default function PayrunsPage() {
                 >
                   <button
                     onClick={handleCompute}
-                    disabled={actionLoading}
-                    className="btn btn-navy"
+                    disabled={actionLoading || selectedPayrun.status === "Paid"}
+                    className={`btn ${selectedPayrun.status === "Draft" || selectedPayrun.status === "Failed" ? "btn-primary" : "btn-navy"}`}
+                    title={selectedPayrun.status === "Paid" ? "Payrun is already finalized and paid" : "Compute salary rules"}
                   >
-                    <Calculator size={15} /> Compute
+                    <Calculator size={15} /> {selectedPayrun.status === "Computed" || selectedPayrun.status === "Validated" ? "Re-Compute" : "Compute"}
                   </button>
                   <button
                     onClick={handleValidate}
-                    disabled={actionLoading}
-                    className="btn btn-secondary"
+                    disabled={actionLoading || selectedPayrun.status === "Draft" || selectedPayrun.status === "Failed" || selectedPayrun.status === "Paid"}
+                    className={`btn ${selectedPayrun.status === "Computed" ? "btn-primary" : "btn-secondary"}`}
+                    title={selectedPayrun.status === "Draft" || selectedPayrun.status === "Failed" ? "Please compute payroll first before validating" : "Validate payrun"}
                   >
                     <CheckCircle2 size={15} /> Validate
                   </button>
                   <button
                     onClick={handleMarkPaid}
-                    disabled={actionLoading}
-                    className="btn btn-primary"
+                    disabled={actionLoading || selectedPayrun.status === "Draft" || selectedPayrun.status === "Failed" || selectedPayrun.status === "Paid"}
+                    className={`btn ${selectedPayrun.status === "Validated" ? "btn-primary" : "btn-secondary"}`}
+                    title={selectedPayrun.status === "Draft" || selectedPayrun.status === "Failed" ? "Please compute & validate payroll first" : "Mark as Paid"}
                   >
                     <DollarSign size={15} /> Mark Paid
                   </button>
                   <button
                     onClick={handleSendBulkEmail}
-                    disabled={actionLoading}
-                    className="btn btn-secondary"
+                    disabled={actionLoading || selectedPayrun.status === "Draft" || selectedPayrun.status === "Failed"}
+                    className={`btn ${selectedPayrun.status === "Paid" ? "btn-primary" : "btn-secondary"}`}
+                    title={selectedPayrun.status === "Draft" || selectedPayrun.status === "Failed" ? "Please compute payroll before sending payslips" : "Send payslips via email"}
                   >
                     <Mail size={15} /> Send Payslips
                   </button>
                 </div>
               </div>
+
+              {/* Payrun Failure Banner */}
+              {selectedPayrun.status === "Failed" && (
+                <div
+                  style={{
+                    padding: "16px 20px",
+                    borderRadius: "8px",
+                    backgroundColor: "rgba(225, 29, 72, 0.1)",
+                    border: "1px solid rgba(225, 29, 72, 0.35)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "14px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <AlertTriangle size={22} color="var(--danger)" />
+                    <div>
+                      <div
+                        style={{
+                          fontWeight: "700",
+                          fontSize: "14px",
+                          color: "var(--danger)",
+                        }}
+                      >
+                        PAYRUN COMPUTATION FAILED
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          marginTop: "2px",
+                          color: "var(--text-main)",
+                        }}
+                      >
+                        {selectedPayrun.failure_reason ||
+                          "An error occurred during payroll rule computation. Please fix the structure or employee data and retry."}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCompute}
+                    disabled={actionLoading}
+                    className="btn btn-navy"
+                    style={{ padding: "8px 16px", fontSize: "12px", fontWeight: "600" }}
+                  >
+                    <Calculator size={15} /> Retry Computation
+                  </button>
+                </div>
+              )}
 
               {/* Payroll Warnings Section */}
               {selectedPayrun.warnings?.length > 0 && (
@@ -1267,7 +1322,7 @@ export default function PayrunsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {payslipDetailData.lines.map((line, idx) => (
+                        {(payslipDetailData.lines || []).map((line, idx) => (
                           <tr key={`line-${line.id || idx}-${idx}`}>
                             <td style={{ fontWeight: "600" }}>
                               {line.rule_name}

@@ -28,43 +28,99 @@ async function findApplicableContract(employeeId, periodStart, periodEnd) {
       AND c.start_date <= ${periodEnd}
       AND (c.end_date IS NULL OR c.end_date >= ${periodStart})
     ORDER BY c.start_date DESC
-    LIMIT 1
   `;
-  return contracts.length > 0 ? contracts[0] : null;
+
+  if (contracts.length === 0) return null;
+  if (contracts.length === 1) return contracts[0];
+
+  // Check if multiple contracts overlap with each other in the given period
+  for (let i = 0; i < contracts.length; i++) {
+    for (let j = i + 1; j < contracts.length; j++) {
+      const c1 = contracts[i];
+      const c2 = contracts[j];
+      const start1 = new Date(c1.start_date).getTime();
+      const end1 = c1.end_date ? new Date(c1.end_date).getTime() : Infinity;
+      const start2 = new Date(c2.start_date).getTime();
+      const end2 = c2.end_date ? new Date(c2.end_date).getTime() : Infinity;
+
+      // Overlap condition
+      if (start1 <= end2 && start2 <= end1) {
+        const err = new Error(
+          `Ambiguous contract error: Multiple overlapping contracts detected for employee ID ${employeeId} during payroll period ${periodStart} to ${periodEnd} (Contract #${c1.contract_number} and Contract #${c2.contract_number}).`
+        );
+        err.status = 400;
+        err.code = 'AMBIGUOUS_CONTRACT';
+        throw err;
+      }
+    }
+  }
+
+  // Non-overlapping consecutive contracts in period: return contract active at the end of the period
+  return contracts[0];
+}
+
+/**
+ * Validates date ranges and checks for contract overlaps
+ */
+async function validateContractDates(employeeId, startDate, endDate, status, currentContractId = null) {
+  if (!startDate) {
+    const err = new Error('Contract start date is required.');
+    err.status = 400;
+    throw err;
+  }
+
+  if (endDate && new Date(endDate) < new Date(startDate)) {
+    const err = new Error(`Contract start date (${startDate}) cannot be after end date (${endDate}).`);
+    err.status = 400;
+    throw err;
+  }
+
+  if (status === 'Active') {
+    const cleanId = currentContractId ? parseInt(currentContractId, 10) : null;
+    const existingActive = await sql`
+      SELECT id, contract_number, start_date, end_date
+      FROM contracts
+      WHERE employee_id = ${employeeId}
+        AND status = 'Active'
+        AND (${cleanId}::int IS NULL OR id != ${cleanId})
+        AND start_date <= COALESCE(${endDate || null}::date, '9999-12-31'::date)
+        AND (end_date IS NULL OR end_date >= ${startDate}::date)
+    `;
+
+    if (existingActive.length > 0) {
+      const conflict = existingActive[0];
+      const conflictStart = conflict.start_date ? new Date(conflict.start_date).toISOString().split('T')[0] : conflict.start_date;
+      const conflictEnd = conflict.end_date ? new Date(conflict.end_date).toISOString().split('T')[0] : 'Present';
+      const err = new Error(`Overlapping active contract detected. Contract #${conflict.contract_number} (${conflictStart} to ${conflictEnd}) overlaps with the specified period.`);
+      err.status = 400;
+      throw err;
+    }
+  }
 }
 
 async function createContract(data) {
   const { contract_number, employee_id, start_date, end_date, wage, salary_structure_id, department_id, position, employment_terms, status = 'Active' } = data;
 
-  // Auto-expire existing active contracts for the same employee to prevent concurrent active contracts
-  if (status === 'Active') {
-    const prevContracts = await sql`
-      SELECT id, start_date FROM contracts 
-      WHERE employee_id = ${employee_id} AND status = 'Active'
-    `;
-    
-    for (const prev of prevContracts) {
-      // Calculate end date as one day prior to new contract start date if possible
-      const newStart = new Date(start_date);
-      const prevEnd = new Date(newStart.getTime() - 86400000).toISOString().split('T')[0];
-      await sql`
-        UPDATE contracts 
-        SET status = 'Expired', end_date = COALESCE(end_date, ${prevEnd})
-        WHERE id = ${prev.id}
-      `;
-    }
+  const cleanEmpId = parseInt(employee_id, 10);
+  if (!cleanEmpId || isNaN(cleanEmpId)) {
+    const err = new Error('Valid employee ID required for contract.');
+    err.status = 400;
+    throw err;
   }
+
+  // Validate start/end dates and check for overlapping active contracts
+  await validateContractDates(cleanEmpId, start_date, end_date, status);
 
   const [contract] = await sql`
     INSERT INTO contracts
       (contract_number, employee_id, start_date, end_date, wage, salary_structure_id, department_id, position, status, employment_terms)
     VALUES
-      (${contract_number}, ${employee_id}, ${start_date}, ${end_date || null}, ${wage}, ${salary_structure_id || null}, ${department_id || null}, ${position}, ${status}, ${employment_terms || ''})
+      (${contract_number}, ${cleanEmpId}, ${start_date}, ${end_date || null}, ${wage}, ${salary_structure_id || null}, ${department_id || null}, ${position}, ${status}, ${employment_terms || ''})
     RETURNING *
   `;
 
   try {
-    await notificationService.notifyEmployeeUser(employee_id, {
+    await notificationService.notifyEmployeeUser(cleanEmpId, {
       title: 'New Contract Assigned',
       message: `Contract #${contract_number} (${position}) has been created for you with wage ₹${parseFloat(wage || 0).toLocaleString()}/mo.`,
       type: 'contract',
@@ -78,7 +134,25 @@ async function createContract(data) {
 }
 
 async function updateContract(id, data) {
-  const { start_date, end_date, wage, salary_structure_id, department_id, position, status, employment_terms } = data;
+  const cleanId = parseInt(id, 10);
+  const existingContracts = await sql`SELECT * FROM contracts WHERE id = ${cleanId}`;
+  if (existingContracts.length === 0) throw new Error('Contract not found');
+  const existing = existingContracts[0];
+
+  const {
+    start_date = existing.start_date,
+    end_date = existing.end_date,
+    wage = existing.wage,
+    salary_structure_id = existing.salary_structure_id,
+    department_id = existing.department_id,
+    position = existing.position,
+    status = existing.status,
+    employment_terms = existing.employment_terms
+  } = data;
+
+  // Validate start/end dates and check for overlapping active contracts
+  await validateContractDates(existing.employee_id, start_date, end_date, status, cleanId);
+
   const [updated] = await sql`
     UPDATE contracts SET
       start_date = ${start_date},
@@ -89,7 +163,7 @@ async function updateContract(id, data) {
       position = ${position},
       status = ${status},
       employment_terms = ${employment_terms}
-    WHERE id = ${id}
+    WHERE id = ${cleanId}
     RETURNING *
   `;
 
@@ -115,4 +189,4 @@ async function deleteContract(id) {
   return deleted;
 }
 
-module.exports = { getContracts, findApplicableContract, createContract, updateContract, deleteContract };
+module.exports = { getContracts, findApplicableContract, createContract, updateContract, deleteContract, validateContractDates };

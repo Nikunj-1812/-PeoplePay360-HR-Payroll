@@ -74,19 +74,26 @@ export default function SchedulesPage() {
     fetchSchedules();
   }, []);
 
+  const formatBreakTime = (hrs) => {
+    const h = Math.floor(hrs || 0);
+    const m = Math.round(((hrs || 0) - h) * 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     try {
+      const formattedBreak = formatBreakTime(breakHours);
       const payload = {
         name,
         schedule_type: `${calculatedHours}h Weekly`,
-        monday_start: startTime, monday_end: endTime, monday_break: `0${breakHours}:00`.slice(-5),
-        tuesday_start: startTime, tuesday_end: endTime, tuesday_break: `0${breakHours}:00`.slice(-5),
-        wednesday_start: startTime, wednesday_end: endTime, wednesday_break: `0${breakHours}:00`.slice(-5),
-        thursday_start: startTime, thursday_end: endTime, thursday_break: `0${breakHours}:00`.slice(-5),
-        friday_start: workDays >= 5 ? startTime : '', friday_end: workDays >= 5 ? endTime : '', friday_break: workDays >= 5 ? `0${breakHours}:00`.slice(-5) : '',
-        saturday_start: workDays >= 6 ? startTime : '', saturday_end: workDays >= 6 ? endTime : '', saturday_break: workDays >= 6 ? `0${breakHours}:00`.slice(-5) : '',
-        sunday_start: workDays >= 7 ? startTime : '', sunday_end: workDays >= 7 ? endTime : '', sunday_break: workDays >= 7 ? `0${breakHours}:00`.slice(-5) : ''
+        monday_start: startTime, monday_end: endTime, monday_break: formattedBreak,
+        tuesday_start: startTime, tuesday_end: endTime, tuesday_break: formattedBreak,
+        wednesday_start: startTime, wednesday_end: endTime, wednesday_break: formattedBreak,
+        thursday_start: startTime, thursday_end: endTime, thursday_break: formattedBreak,
+        friday_start: workDays >= 5 ? startTime : '', friday_end: workDays >= 5 ? endTime : '', friday_break: workDays >= 5 ? formattedBreak : '',
+        saturday_start: workDays >= 6 ? startTime : '', saturday_end: workDays >= 6 ? endTime : '', saturday_break: workDays >= 6 ? formattedBreak : '',
+        sunday_start: workDays >= 7 ? startTime : '', sunday_end: workDays >= 7 ? endTime : '', sunday_break: workDays >= 7 ? formattedBreak : ''
       };
       await api.post('/schedules', payload);
       setShowModal(false);

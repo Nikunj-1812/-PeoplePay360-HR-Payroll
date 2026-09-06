@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { LogIn, Shield, Users, Wallet, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { LogIn, Shield, Users, Wallet, ShieldCheck, ArrowLeft, X } from 'lucide-react';
 
 export default function LoginPage({ onCancel }) {
   const { login } = useAuth();
@@ -14,6 +15,25 @@ export default function LoginPage({ onCancel }) {
   const [error, setError] = useState(null);
 
   const [activeDemoEmail, setActiveDemoEmail] = useState(null);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState('');
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail) return;
+    setForgotLoading(true);
+    setForgotMessage('');
+    try {
+      const res = await axios.post('/api/auth/forgot-password', { email: forgotEmail });
+      setForgotMessage(res.data?.message || 'If an account exists for that email, a password reset link has been dispatched.');
+    } catch (err) {
+      setForgotMessage(err.response?.data?.message || 'Failed to request password reset.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -157,9 +177,17 @@ export default function LoginPage({ onCancel }) {
                   <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-main)' }}>
                     Password
                   </label>
-                  <a href="#forgot" onClick={(e) => e.preventDefault()} style={{ fontSize: '12px', color: 'var(--secondary-blue)', textDecoration: 'none' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotEmail(email);
+                      setForgotMessage('');
+                      setShowForgotModal(true);
+                    }}
+                    style={{ background: 'none', border: 'none', padding: 0, fontSize: '12px', color: 'var(--secondary-blue)', cursor: 'pointer', textDecoration: 'none' }}
+                  >
                     Forgot password?
-                  </a>
+                  </button>
                 </div>
                 <input
                   type="password"
@@ -297,6 +325,115 @@ export default function LoginPage({ onCancel }) {
           </>
         )}
       </div>
+
+      {showForgotModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
+          backgroundColor: 'rgba(10, 25, 49, 0.8)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--card-bg)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '16px',
+            maxWidth: '400px',
+            width: '100%',
+            padding: '24px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.3)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)', margin: 0 }}>
+                Reset Your Password
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Enter your account email address and we'll send you a single-use link to set a new password.
+            </p>
+
+            {forgotMessage && (
+              <div style={{
+                padding: '10px 12px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(179, 207, 229, 0.1)',
+                border: '1px solid #B3CFE5',
+                color: 'var(--text-main)',
+                fontSize: '12px',
+                marginBottom: '16px'
+              }}>
+                {forgotMessage}
+              </div>
+            )}
+
+            <form onSubmit={handleForgotSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: 'var(--text-main)' }}>
+                  Registered Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  className="form-input"
+                  placeholder="name@peoplepay360.com"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--text-muted)',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: '#B3CFE5',
+                    color: '#0A1931',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {forgotLoading ? 'Sending...' : 'Send Setup Link'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

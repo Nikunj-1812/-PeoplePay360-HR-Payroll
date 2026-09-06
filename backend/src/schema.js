@@ -82,6 +82,10 @@ async function initializeDatabase() {
   `;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_hash VARCHAR(255)`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_used_at TIMESTAMPTZ`;
 
   // 5. Salary Structures
   await sql`
@@ -205,9 +209,11 @@ async function initializeDatabase() {
       total_net NUMERIC(14,2) DEFAULT 0,
       total_gross NUMERIC(14,2) DEFAULT 0,
       payslip_count INTEGER DEFAULT 0,
+      failure_reason TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE payruns ADD COLUMN IF NOT EXISTS failure_reason TEXT`;
 
   // 13. Payslips
   await sql`
@@ -260,11 +266,20 @@ async function initializeDatabase() {
 
   // 16. Performance Indexes
   await sql`CREATE INDEX IF NOT EXISTS idx_contracts_emp_id ON contracts(employee_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_contracts_emp_status ON contracts(employee_id, status)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_contracts_status_dates ON contracts(status, start_date, end_date)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_employees_dept_status ON employees(department_id, status)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_attendance_emp_date ON attendance(employee_id, date)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_time_off_requests_emp ON time_off_requests(employee_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_payslips_payrun_emp ON payslips(payrun_id, employee_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_time_off_requests_status ON time_off_requests(status, start_date)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_time_off_alloc_emp_type ON time_off_allocations(employee_id, time_off_type_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_salary_rules_struct_active ON salary_rules(salary_structure_id, is_active)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_payruns_status_period ON payruns(status, period_start, period_end)`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_idx_payslips_payrun_emp ON payslips(payrun_id, employee_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_payslips_employee_payrun ON payslips(employee_id, payrun_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_payslip_lines_payslip ON payslip_lines(payslip_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token_hash)`;
 
   console.log('[DB] Core tables & performance indexes created/updated. Seeding initial data...');
   await seedData();
@@ -403,6 +418,15 @@ async function seedData() {
   } else {
     salStructId = existingStructs[0].id;
   }
+
+  // Ensure formula_expression is populated for legacy/seeded formula rules
+  await sql`
+    UPDATE salary_rules 
+    SET formula_expression = percentage_based_on 
+    WHERE computation_type = 'formula' 
+      AND (formula_expression IS NULL OR formula_expression = '') 
+      AND percentage_based_on IS NOT NULL AND percentage_based_on != ''
+  `;
 
   // 5. Contracts
   const existingContracts = await sql`SELECT id FROM contracts LIMIT 1`;
