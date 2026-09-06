@@ -7,12 +7,12 @@ function createTransporter() {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
-    connectionTimeout: 3000,
-    greetingTimeout: 3000,
-    socketTimeout: 3000,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
     auth: {
-      user: process.env.SMTP_USER || 'demo@peoplepay360.com',
-      pass: process.env.SMTP_PASSWORD || 'demo_pass'
+      user: process.env.SMTP_USER || 'time65315@gmail.com',
+      pass: process.env.SMTP_PASSWORD || 'votq qetz vkyp txex'
     }
   });
 }
