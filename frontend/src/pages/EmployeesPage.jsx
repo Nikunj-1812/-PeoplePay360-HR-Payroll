@@ -129,8 +129,12 @@ export default function EmployeesPage({ onNavigateTab }) {
         await api.put(`/employees/${formData.id}`, formData);
         toast.success('Employee profile and User role updated live.');
       } else {
-        await api.post('/employees', formData);
-        toast.success('Employee created and User account synced live.');
+        const res = await api.post('/employees', formData);
+        if (res && res.data?.emailSent) {
+          toast.success(`Employee created & onboarding credentials email sent to ${formData.email}!`);
+        } else {
+          toast.success('Employee created successfully.');
+        }
       }
       api.invalidate(['employees', 'users', 'dashboard']);
       setShowFormModal(false);

@@ -146,22 +146,50 @@ const emailService = require('./emailService');
 // Create new employee and auto-sync user account with secure onboarding credentials
 async function createEmployee(data) {
   const { emp_id, first_name, last_name, email, phone, department_id, manager_id, schedule_id, job_position, role, bank_name, account_number, ifsc_code } = data;
+
+  if (!email || !String(email).trim().includes('@')) {
+    const err = new Error('A valid email address is required.');
+    err.status = 400;
+    throw err;
+  }
+
+  if (!first_name || !String(first_name).trim()) {
+    const err = new Error('First name is required.');
+    err.status = 400;
+    throw err;
+  }
+
   const cleanEmail = String(email).trim().toLowerCase();
   const targetRole = resolveRole(role, job_position);
 
   // Check email uniqueness across employees
   const existingEmail = await sql`SELECT id FROM employees WHERE LOWER(TRIM(email)) = ${cleanEmail}`;
   if (existingEmail.length > 0) {
-    const err = new Error(`An account already exists for email "${cleanEmail}".`);
+    const err = new Error(`An account already exists for email address "${cleanEmail}".`);
     err.status = 400;
     throw err;
+  }
+
+  // Ensure unique emp_id or auto-generate if blank/duplicate
+  let finalEmpId = emp_id ? String(emp_id).trim() : '';
+  if (!finalEmpId) {
+    const [maxRow] = await sql`SELECT max(id) as max_id FROM employees`;
+    const nextNum = (maxRow?.max_id || 0) + 101;
+    finalEmpId = `EMP${String(nextNum).padStart(4, '0')}`;
+  } else {
+    const existingEmpId = await sql`SELECT id FROM employees WHERE LOWER(TRIM(emp_id)) = ${finalEmpId.toLowerCase()}`;
+    if (existingEmpId.length > 0) {
+      const [maxRow] = await sql`SELECT max(id) as max_id FROM employees`;
+      const nextNum = (maxRow?.max_id || 0) + 101;
+      finalEmpId = `EMP${String(nextNum).padStart(4, '0')}`;
+    }
   }
 
   const [newEmp] = await sql`
     INSERT INTO employees 
       (emp_id, first_name, last_name, email, phone, department_id, manager_id, schedule_id, job_position, status, bank_name, account_number, ifsc_code)
     VALUES
-      (${emp_id}, ${first_name}, ${last_name}, ${cleanEmail}, ${phone || null}, ${department_id ? parseInt(department_id, 10) : null}, ${manager_id ? parseInt(manager_id, 10) : null}, ${schedule_id ? parseInt(schedule_id, 10) : null}, ${job_position || 'Employee'}, 'Active', ${bank_name || null}, ${account_number || null}, ${ifsc_code || null})
+      (${finalEmpId}, ${first_name}, ${last_name}, ${cleanEmail}, ${phone || null}, ${department_id ? parseInt(department_id, 10) : null}, ${manager_id ? parseInt(manager_id, 10) : null}, ${schedule_id ? parseInt(schedule_id, 10) : null}, ${job_position || 'Employee'}, 'Active', ${bank_name || null}, ${account_number || null}, ${ifsc_code || null})
     RETURNING *
   `;
 
