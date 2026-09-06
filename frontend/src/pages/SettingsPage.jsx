@@ -4,7 +4,7 @@ import { subscribeCache } from '../api/cache';
 import { useToast } from '../context/ToastContext';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CenteredSpinner } from '../components/ui/Loading';
-import { Settings, User, Plus, Search, Edit2, Key, Trash2, CheckCircle, UserCheck } from 'lucide-react';
+import { Settings, User, Plus, Search, Edit2, Key, Trash2, CheckCircle, UserCheck, Mail } from 'lucide-react';
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -56,14 +56,35 @@ export default function SettingsPage() {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/auth/users', createForm);
+      const res = await api.post('/auth/users', createForm);
       api.invalidate(['users', 'dashboard']);
-      toast.success('System user created successfully.');
+      if (res && res.data?.emailSent) {
+        toast.success(`User "${createForm.name}" created and onboarding email sent to ${createForm.email}!`);
+      } else {
+        toast.success(`User "${createForm.name}" created successfully.`);
+        if (res?.data?.emailError) {
+          toast.warning(`Note: Onboarding email could not be delivered (${res.data.emailError}).`);
+        }
+      }
       setShowCreateModal(false);
       setCreateForm({ name: '', email: '', password: '', role: 'employee', employee_id: '' });
       fetchUsersAndEmployees();
     } catch (err) {
       toast.error(err.message || 'Failed to create user.');
+    }
+  };
+
+  const handleResendCredentials = async (u) => {
+    try {
+      toast.info(`Sending onboarding credentials to ${u.email}...`);
+      const res = await api.post(`/auth/users/${u.id}/resend-credentials`);
+      if (res && res.data?.emailSent) {
+        toast.success(`Onboarding email with login credentials successfully sent to ${u.email}!`);
+      } else {
+        toast.warning(res?.data?.message || `Credentials reset, but onboarding email failed to deliver.`);
+      }
+    } catch (err) {
+      toast.error(err.message || 'Failed to send onboarding credentials.');
     }
   };
 
@@ -212,6 +233,14 @@ export default function SettingsPage() {
                           title="Edit User & Role"
                         >
                           <Edit2 size={13} /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleResendCredentials(u)}
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 8px', fontSize: '12px' }}
+                          title="Resend Onboarding Email Credentials"
+                        >
+                          <Mail size={13} />
                         </button>
                         <button
                           onClick={() => {

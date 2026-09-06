@@ -153,6 +153,12 @@ router.put('/auth/users/:id/reset-password', authenticateToken, requireRole(['ad
   res.json({ success: true, data: result });
 }));
 
+// POST /api/auth/users/:id/resend-credentials
+router.post('/auth/users/:id/resend-credentials', authenticateToken, requireRole(['admin']), asyncHandler(async (req, res) => {
+  const result = await authService.resendUserCredentials(req.params.id);
+  res.json({ success: true, data: result });
+}));
+
 // DELETE /api/auth/users/:id
 router.delete('/auth/users/:id', authenticateToken, requireRole(['admin']), asyncHandler(async (req, res) => {
   const deleted = await authService.deleteUser(req.params.id);

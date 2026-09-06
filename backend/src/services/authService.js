@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../middleware/auth');
 
 const crypto = require('crypto');
-const { validatePassword } = require('../utils/passwordPolicy');
+const { validatePassword, generateSecureTemporaryPassword } = require('../utils/passwordPolicy');
 const emailService = require('./emailService');
 
 // Authenticate user with email and password
@@ -93,8 +93,17 @@ async function getAllUsers() {
 async function createUser(data) {
   const { name, email, password, role, employee_id } = data;
   const cleanEmail = String(email).trim().toLowerCase();
-  const passwordHash = await bcrypt.hash(password || 'PeoplePay@123', 10);
+  const rawPassword = password || (typeof generateSecureTemporaryPassword === 'function' ? generateSecureTemporaryPassword() : 'PeoplePay@123');
+  const passwordHash = await bcrypt.hash(rawPassword, 10);
   let targetEmpId = employee_id ? parseInt(employee_id, 10) : null;
+
+  // Check email uniqueness across users
+  const existingUser = await sql`SELECT id FROM users WHERE LOWER(TRIM(email)) = ${cleanEmail}`;
+  if (existingUser.length > 0) {
+    const err = new Error(`A user account with email "${cleanEmail}" already exists.`);
+    err.status = 400;
+    throw err;
+  }
 
   // Link users created from an existing employee email automatically.
   if (!targetEmpId) {
@@ -106,9 +115,14 @@ async function createUser(data) {
     targetEmpId = matchingEmployee?.id || null;
   }
 
+  // Generate 24h reset token for setup link
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
   const [user] = await sql`
-    INSERT INTO users (name, email, password_hash, role, employee_id)
-    VALUES (${name}, ${cleanEmail}, ${passwordHash}, ${role || 'employee'}, ${targetEmpId})
+    INSERT INTO users (name, email, password_hash, role, employee_id, must_change_password, reset_token_hash, reset_token_expires_at)
+    VALUES (${name}, ${cleanEmail}, ${passwordHash}, ${role || 'employee'}, ${targetEmpId}, FALSE, ${tokenHash}, ${expiresAt})
     RETURNING id, name, email, role, employee_id, created_at
   `;
 
@@ -129,7 +143,73 @@ async function createUser(data) {
     `;
   }
 
-  return user;
+  // Send onboarding email with temporary password & reset token
+  let emailSent = false;
+  let emailError = null;
+  try {
+    const emailRes = await emailService.sendOnboardingEmail({
+      employeeName: name,
+      employeeEmail: cleanEmail,
+      temporaryPassword: rawPassword,
+      resetToken: rawToken
+    });
+    emailSent = !!emailRes.emailSent;
+    if (!emailSent && emailRes.error) emailError = emailRes.error;
+  } catch (err) {
+    console.error(`[createUser] Failed to send onboarding email to ${cleanEmail}:`, err.message);
+    emailError = err.message;
+  }
+
+  return {
+    ...user,
+    temporaryPassword: rawPassword,
+    resetToken: rawToken,
+    emailSent,
+    emailError
+  };
+}
+
+// Admin: Resend user onboarding credentials via email
+async function resendUserCredentials(id) {
+  const users = await sql`SELECT id, name, email, role, employee_id FROM users WHERE id = ${id}`;
+  if (users.length === 0) {
+    const err = new Error('User not found.');
+    err.status = 404;
+    throw err;
+  }
+
+  const user = users[0];
+  const newTempPassword = typeof generateSecureTemporaryPassword === 'function' ? generateSecureTemporaryPassword() : 'PeoplePay@123';
+  const passwordHash = await bcrypt.hash(newTempPassword, 10);
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  await sql`
+    UPDATE users SET
+      password_hash = ${passwordHash},
+      reset_token_hash = ${tokenHash},
+      reset_token_expires_at = ${expiresAt},
+      reset_token_used_at = NULL
+    WHERE id = ${user.id}
+  `;
+
+  const emailRes = await emailService.sendOnboardingEmail({
+    employeeName: user.name,
+    employeeEmail: user.email,
+    temporaryPassword: newTempPassword,
+    resetToken: rawToken
+  });
+
+  return {
+    success: true,
+    email: user.email,
+    emailSent: !!emailRes.emailSent,
+    temporaryPassword: newTempPassword,
+    message: emailRes.emailSent
+      ? `Onboarding credentials email sent to ${user.email}.`
+      : `Credentials reset, but onboarding email failed to deliver: ${emailRes.error || 'SMTP Error'}`
+  };
 }
 
 // Admin: Update user details & role
@@ -398,6 +478,7 @@ module.exports = {
   getCurrentUser,
   getAllUsers,
   createUser,
+  resendUserCredentials,
   updateUser,
   resetUserPassword,
   deleteUser,
